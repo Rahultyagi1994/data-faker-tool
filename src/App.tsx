@@ -424,6 +424,21 @@ export function App() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* Product Hunt Badge */}
+              <a
+                href="https://www.producthunt.com/products/dataforge-synthetic-data-generator?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-dataforge-synthetic-data-generator"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden lg:block flex-shrink-0 hover:opacity-90 transition-opacity"
+              >
+                <img
+                  src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1077479&theme=dark&t=1770829437528"
+                  alt="DataForge — Synthetic Data Generator - Generate realistic test data with custom scenarios | Product Hunt"
+                  width="250"
+                  height="54"
+                  className="h-[40px] w-auto"
+                />
+              </a>
               {/* Active Scenario badge in header */}
               {activeScenario && (
                 <button
