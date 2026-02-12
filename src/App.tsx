@@ -11,6 +11,10 @@ import {
 } from './utils/fakerData';
 import { applyScenario, type ScenarioConfig, PRESET_SCENARIOS } from './utils/scenarios';
 import { ScenarioBuilder } from './components/ScenarioBuilder';
+import AuthModal from './components/AuthModal';
+import UsageStats from './components/UsageStats';
+import LandingPage from './components/LandingPage';
+import { useAuth } from './context/AuthContext';
 
 import { cn } from './utils/cn';
 
@@ -49,6 +53,8 @@ const PRESET_COUNTS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000
 const HEALTHCARE_TYPES: DataType[] = ['patients', 'medicalRecords', 'prescriptions', 'labResults', 'insuranceClaims', 'healthcareProviders'];
 
 export function App() {
+  const { user, profile, loading: authLoading, trackGeneration, trackDownload } = useAuth();
+
   const [dataType, setDataType] = useState<DataType>('users');
   const [count, setCount] = useState(25);
   const [customCount, setCustomCount] = useState('');
@@ -64,6 +70,10 @@ export function App() {
   // Scenario state
   const [showScenarioBuilder, setShowScenarioBuilder] = useState(false);
   const [activeScenario, setActiveScenario] = useState<Partial<ScenarioConfig> | null>(null);
+
+  // Modal states
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showUsageStats, setShowUsageStats] = useState(false);
 
   const effectiveCount = customCount ? parseInt(customCount) || count : count;
 
@@ -82,6 +92,12 @@ export function App() {
 
     const elapsed = performance.now() - start;
     setGenerationTime(elapsed);
+
+    // Track generation
+    if (user) {
+      trackGeneration(dataType, effectiveCount, activeScenario ? 'custom' : undefined);
+    }
+
     return result;
   }, [dataType, effectiveCount, seed, activeScenario]);
 
@@ -138,6 +154,11 @@ export function App() {
 
       setDownloadStatus('success');
       setTimeout(() => setDownloadStatus('idle'), 3000);
+
+      // Track download
+      if (user) {
+        trackDownload(dataType, effectiveCount, exportFormat);
+      }
     } catch {
       try {
         const url = URL.createObjectURL(blob);
@@ -154,7 +175,7 @@ export function App() {
         });
       }
     }
-  }, [exportedData, exportFormat, dataType, effectiveCount]);
+  }, [exportedData, exportFormat, dataType, effectiveCount, user, trackDownload]);
 
   const randomizeSeed = () => {
     setSeed(Math.floor(Math.random() * 99999) + 1);
@@ -390,6 +411,28 @@ export function App() {
   const displayedCount = Math.min(filteredData.length, 500);
   const exportSize = formatBytes(new Blob([exportedData]).size);
 
+  // Show loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-dark-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 8h6M9 16h3" />
+            </svg>
+          </div>
+          <p className="text-dark-400">Loading DataForge...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show landing page if not logged in
+  if (!user) {
+    return <LandingPage />;
+  }
+
   return (
     <div className="min-h-screen bg-dark-950 relative overflow-hidden">
       {/* Background ambient effects */}
@@ -439,6 +482,7 @@ export function App() {
                   className="h-[40px] w-auto"
                 />
               </a>
+              
               {/* Active Scenario badge in header */}
               {activeScenario && (
                 <button
@@ -465,7 +509,32 @@ export function App() {
                   {generationTime < 1 ? '<1' : Math.round(generationTime)}ms
                 </span>
               </div>
- 
+
+              {/* User Avatar */}
+              <button
+                onClick={() => setShowUsageStats(true)}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-dark-800 border border-dark-650 hover:border-dark-500 hover:bg-dark-750 transition-all group"
+              >
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={profile.full_name || 'User'}
+                    className="w-7 h-7 rounded-lg object-cover border border-dark-600"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-[12px] font-bold text-white">
+                    {(profile?.full_name || profile?.email || 'U')[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="hidden lg:block text-left">
+                  <div className="text-[12px] font-semibold text-dark-100 group-hover:text-white transition-colors">
+                    {profile?.full_name || 'User'}
+                  </div>
+                  <div className="text-[10px] text-dark-500 font-[JetBrains_Mono,monospace]">
+                    {profile?.total_generations || 0} gen{(profile?.total_generations || 0) !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
@@ -566,8 +635,8 @@ export function App() {
                   </div>
                   <p className="text-[12px] text-dark-400 mt-0.5">
                     {activeScenario
-                                          ? (activePreset ? activePreset.description : 'Custom field rules and data quality settings applied')
-                    : 'Define data patterns, edge cases, null rates, duplicate records, and field constraints'
+                      ? (activePreset ? activePreset.description : 'Custom field rules and data quality settings applied')
+                      : 'Define data patterns, edge cases, null rates, duplicate records, and field constraints'
                     }
                   </p>
                 </div>
@@ -632,10 +701,10 @@ export function App() {
                     <span key={field} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-dark-750 text-dark-200 text-[11px] font-medium ring-1 ring-dark-600">
                       <span className="font-[JetBrains_Mono,monospace] text-cyan-400/80">{field}</span>
                       <span className="text-dark-500">→</span>
-                      <span className="text-dark-300">{parts.join(', ') as string}</span>
+                      <span className="text-dark-300">{parts.join(', ')}</span>
                     </span>
                   );
-                }) as React.ReactNode}
+                })}
               </div>
             )}
           </div>
@@ -1047,6 +1116,12 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* Auth Modal (for cases where we need to show it again) */}
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+
+      {/* Usage Stats Modal */}
+      <UsageStats isOpen={showUsageStats} onClose={() => setShowUsageStats(false)} />
     </div>
   );
 }
