@@ -5,8 +5,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIU
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Check if we're in demo mode (now false since we have real credentials)
-export const isDemoMode = false;
+// Supabase is connected with real credentials
 
 // Types for our database
 export interface UserProfile {
@@ -17,6 +16,7 @@ export interface UserProfile {
   created_at: string;
   total_generations: number;
   total_records: number;
+  total_downloads: number;
   last_active: string;
 }
 

@@ -8,11 +8,13 @@ export default function LandingPage() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
     setLoading(true);
 
     try {
@@ -23,7 +25,17 @@ export default function LandingPage() {
           setLoading(false);
           return;
         }
+        if (password.length < 6) {
+          setError('Password must be at least 6 characters');
+          setLoading(false);
+          return;
+        }
         result = await signUpWithEmail(email, password, fullName);
+        if (!result.error) {
+          setSuccessMsg('Account created! Check your email to confirm, then sign in.');
+          setIsSignUp(false);
+          setPassword('');
+        }
       } else {
         result = await signInWithEmail(email, password);
       }
@@ -290,6 +302,12 @@ export default function LandingPage() {
                 </div>
               )}
 
+              {successMsg && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm">
+                  ✅ {successMsg}
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={loading}
@@ -323,12 +341,7 @@ export default function LandingPage() {
               </button>
             </p>
 
-            {/* Demo Mode Notice */}
-            <div className="mt-6 p-3 bg-dark-800/50 border border-dark-700 rounded-xl">
-              <p className="text-dark-400 text-xs text-center">
-                🔒 Your data is stored locally in demo mode. Configure Supabase for cloud sync.
-              </p>
-            </div>
+ 
           </div>
 
           {/* Mobile Features */}
