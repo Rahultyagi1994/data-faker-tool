@@ -1,5 +1,5 @@
 // Seeded random number generator for reproducibility
-class SeededRandom {
+export class SeededRandom {
   private seed: number;
   constructor(seed: number) {
     this.seed = seed;

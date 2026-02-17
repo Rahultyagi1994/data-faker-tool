@@ -10,7 +10,9 @@ import {
   type FakeData,
 } from './utils/fakerData';
 import { applyScenario, type ScenarioConfig, PRESET_SCENARIOS } from './utils/scenarios';
+import { type CustomColumn, applyCustomColumns } from './utils/customColumns';
 import { ScenarioBuilder } from './components/ScenarioBuilder';
+import CustomColumnsModal from './components/CustomColumnsModal';
 import AuthModal from './components/AuthModal';
 import UsageStats from './components/UsageStats';
 import LandingPage from './components/LandingPage';
@@ -71,6 +73,10 @@ export function App() {
   const [showScenarioBuilder, setShowScenarioBuilder] = useState(false);
   const [activeScenario, setActiveScenario] = useState<Partial<ScenarioConfig> | null>(null);
 
+  // Custom columns state
+  const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
+  const [showCustomColumns, setShowCustomColumns] = useState(false);
+
   // Modal states
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUsageStats, setShowUsageStats] = useState(false);
@@ -90,6 +96,16 @@ export function App() {
       ) as unknown as FakeData[];
     }
 
+    // Apply custom columns
+    const enabledCustomCols = customColumns.filter(c => c.enabled && c.name.trim());
+    if (enabledCustomCols.length > 0) {
+      result = applyCustomColumns(
+        result as unknown as Record<string, unknown>[],
+        enabledCustomCols,
+        seed
+      ) as unknown as FakeData[];
+    }
+
     const elapsed = performance.now() - start;
     setGenerationTime(elapsed);
 
@@ -99,9 +115,14 @@ export function App() {
     }
 
     return result;
-  }, [dataType, effectiveCount, seed, activeScenario]);
+  }, [dataType, effectiveCount, seed, activeScenario, customColumns]);
 
-  const columns = useMemo(() => getColumns(dataType), [dataType]);
+  const columns = useMemo(() => {
+    const baseCols = getColumns(dataType);
+    const enabledCustomCols = customColumns.filter(c => c.enabled && c.name.trim());
+    const customColDefs = enabledCustomCols.map(c => ({ key: c.name, label: c.name }));
+    return [...baseCols, ...customColDefs];
+  }, [dataType, customColumns]);
 
   const filteredData = useMemo(() => {
     if (!searchQuery.trim()) return data;
@@ -938,6 +959,84 @@ export function App() {
           </div>
         )}
 
+        {/* Custom Columns Bar */}
+        <div className="mb-5">
+          <div className={cn(
+            'rounded-xl border overflow-hidden transition-all duration-300',
+            customColumns.filter(c => c.enabled && c.name.trim()).length > 0
+              ? 'border-cyan-500/30 bg-gradient-to-r from-cyan-500/5 via-dark-800/40 to-blue-500/5'
+              : 'border-dark-650 bg-dark-800/40'
+          )}>
+            <div className="flex items-center justify-between px-5 py-4">
+              <div className="flex items-center gap-4">
+                <div className={cn(
+                  'h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all',
+                  customColumns.filter(c => c.enabled && c.name.trim()).length > 0
+                    ? 'bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/20'
+                    : 'bg-dark-750 border border-dark-600'
+                )}>
+                  <span className="text-lg">➕</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-white">Custom Columns</h3>
+                    {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold ring-1 ring-cyan-500/20 uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-glow" />
+                        {customColumns.filter(c => c.enabled && c.name.trim()).length} active
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-dark-500 bg-dark-750 px-2 py-0.5 rounded-full">Optional</span>
+                    )}
+                  </div>
+                  <p className="text-[12px] text-dark-400 mt-0.5">
+                    {customColumns.filter(c => c.enabled && c.name.trim()).length > 0
+                      ? 'Custom columns are added to every generated record'
+                      : 'Add your own columns with custom data types, formulas, and value pools'
+                    }
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 && (
+                  <button
+                    onClick={() => setCustomColumns([])}
+                    className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-[12px] font-medium border border-red-500/20 hover:bg-red-500/20 transition-all"
+                  >
+                    ✕ Clear
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowCustomColumns(true)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all active:scale-[0.98]',
+                    customColumns.filter(c => c.enabled && c.name.trim()).length > 0
+                      ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/30 hover:from-cyan-500/30 hover:to-blue-500/30'
+                      : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30'
+                  )}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 ? 'Edit Columns' : 'Add Custom Columns'}
+                </button>
+              </div>
+            </div>
+            {/* Show active custom column names */}
+            {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 && (
+              <div className="px-5 pb-4 flex flex-wrap gap-2">
+                {customColumns.filter(c => c.enabled && c.name.trim()).map(col => (
+                  <span key={col.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-dark-750 text-dark-200 text-[11px] font-medium ring-1 ring-dark-600">
+                    <span>{col.type === 'text' ? '🔤' : col.type === 'number' ? '🔢' : col.type === 'boolean' ? '✅' : col.type === 'date' ? '📅' : col.type === 'select' ? '📋' : '🧮'}</span>
+                    <span className="font-[JetBrains_Mono,monospace] text-cyan-400/80">{col.name}</span>
+                    <span className="text-dark-500">({col.type})</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Search */}
         <div className="mb-5 flex items-center gap-4">
           <div className="relative flex-1 max-w-lg">
@@ -1078,6 +1177,15 @@ export function App() {
           activeScenario={activeScenario}
           onApplyScenario={handleApplyScenario}
           onClose={() => setShowScenarioBuilder(false)}
+        />
+      )}
+
+      {/* Custom Columns Modal */}
+      {showCustomColumns && (
+        <CustomColumnsModal
+          columns={customColumns}
+          onChange={setCustomColumns}
+          onClose={() => setShowCustomColumns(false)}
         />
       )}
 
