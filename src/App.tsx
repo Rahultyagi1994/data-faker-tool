@@ -1,1268 +1,722 @@
 import { useState, useMemo, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import {
-  generateData,
-  getColumns,
-  exportToJSON,
-  exportToCSV,
-  exportToSQL,
-  exportToHL7FHIR,
-  type DataType,
-  type FakeData,
+  generateUsers, generateAddresses, generateTransactions,
+  generatePatients, generateMedicalRecords, generatePrescriptions,
+  generateLabResults, generateInsuranceClaims, generateHealthcareProviders,
+  SeededRandom,
 } from './utils/fakerData';
-import { applyScenario, type ScenarioConfig, PRESET_SCENARIOS } from './utils/scenarios';
-import { type CustomColumn, applyCustomColumns } from './utils/customColumns';
-import { ScenarioBuilder } from './components/ScenarioBuilder';
-import CustomColumnsModal from './components/CustomColumnsModal';
-import AuthModal from './components/AuthModal';
-import UsageStats from './components/UsageStats';
-import LandingPage from './components/LandingPage';
-import { useAuth } from './context/AuthContext';
+import {
+  generateOrders, generateProducts, generateReviews,
+  generateBankAccounts, generateLoanApplications, generateInvestments,
+  generateStudents, generateCourses, generateEnrollments,
+  generateSocialPosts, generateSocialUsers, generateNotifications,
+  generateSensorReadings, generateDevices, generateAlerts,
+  generateEmployees, generateJobPostings, generateTimesheets,
+} from './utils/ecommerceGenerators';
 
-import { cn } from './utils/cn';
+const supabaseUrl = 'https://mmyhdaphoqjxzhxqqbfk.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1teWhkYXBob3FqeHpoeHFxYmZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5MTU0ODIsImV4cCI6MjA4NjQ5MTQ4Mn0.sJJRntpm2G-hiEsAnueOWmV9uX8kFnVq-5ZylYtyi_M';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-type ExportFormat = 'json' | 'csv' | 'sql' | 'fhir';
+/* ───────── types ───────── */
+interface CustomField {
+  id: string; name: string;
+  type: 'text' | 'number' | 'boolean' | 'date' | 'select';
+  options?: string[]; min?: number; max?: number; prefix?: string; suffix?: string; nullPct?: number;
+}
+interface CustomDataType { id: string; name: string; icon: string; fields: CustomField[]; }
+interface ScenarioRule {
+  field: string; action: 'fixed' | 'range' | 'null' | 'oneOf';
+  value?: string; min?: number; max?: number; values?: string[]; pct?: number;
+}
+interface CustomScenario { id: string; name: string; dataType: string; rules: ScenarioRule[]; }
 
-interface DataTypeConfig {
-  value: DataType;
-  label: string;
-  icon: string;
-  description: string;
-  category: 'general' | 'healthcare';
-  color: string;
+/* ───────── generators map ───────── */
+const GENERATORS: Record<string, (c: number, s: number) => any[]> = {
+  users: generateUsers, addresses: generateAddresses, transactions: generateTransactions,
+  patients: generatePatients, medicalRecords: generateMedicalRecords, prescriptions: generatePrescriptions,
+  labResults: generateLabResults, insuranceClaims: generateInsuranceClaims, healthcareProviders: generateHealthcareProviders,
+  orders: generateOrders, products: generateProducts, reviews: generateReviews,
+  bankAccounts: generateBankAccounts, loanApplications: generateLoanApplications, investments: generateInvestments,
+  students: generateStudents, courses: generateCourses, enrollments: generateEnrollments,
+  socialPosts: generateSocialPosts, socialUsers: generateSocialUsers, notifications: generateNotifications,
+  sensorReadings: generateSensorReadings, devices: generateDevices, alerts: generateAlerts,
+  employees: generateEmployees, jobPostings: generateJobPostings, timesheets: generateTimesheets,
+};
+
+/* ───────── categories ───────── */
+const CATEGORIES = [
+  { id: 'general', label: '📊 General', color: '#06b6d4' },
+  { id: 'healthcare', label: '🏥 Healthcare', color: '#14b8a6' },
+  { id: 'ecommerce', label: '🛒 E-Commerce', color: '#a855f7' },
+  { id: 'finance', label: '🏦 Finance', color: '#f59e0b' },
+  { id: 'education', label: '🎓 Education', color: '#ec4899' },
+  { id: 'iot', label: '📡 IoT & More', color: '#f97316' },
+];
+
+const DATA_TYPES = [
+  { id: 'users', name: 'Users', icon: '👤', cat: 'general', desc: 'Names, emails, phones' },
+  { id: 'addresses', name: 'Addresses', icon: '📍', cat: 'general', desc: 'Streets, cities, ZIP codes' },
+  { id: 'transactions', name: 'Transactions', icon: '💳', cat: 'general', desc: 'Amounts, merchants' },
+  { id: 'patients', name: 'Patients', icon: '🩺', cat: 'healthcare', desc: 'MRN, blood type, allergies' },
+  { id: 'medicalRecords', name: 'Medical Records', icon: '📋', cat: 'healthcare', desc: 'ICD-10, vitals, notes' },
+  { id: 'prescriptions', name: 'Prescriptions', icon: '💊', cat: 'healthcare', desc: 'Medications, dosages' },
+  { id: 'labResults', name: 'Lab Results', icon: '🔬', cat: 'healthcare', desc: 'Tests, reference ranges' },
+  { id: 'insuranceClaims', name: 'Insurance Claims', icon: '📄', cat: 'healthcare', desc: 'Claims, amounts, status' },
+  { id: 'healthcareProviders', name: 'Providers', icon: '🏥', cat: 'healthcare', desc: 'NPI, specialties' },
+  { id: 'orders', name: 'Orders', icon: '🛒', cat: 'ecommerce', desc: 'Cart, shipping, tracking' },
+  { id: 'products', name: 'Products', icon: '📦', cat: 'ecommerce', desc: 'SKU, price, stock' },
+  { id: 'reviews', name: 'Reviews', icon: '⭐', cat: 'ecommerce', desc: 'Ratings, comments' },
+  { id: 'bankAccounts', name: 'Bank Accounts', icon: '🏦', cat: 'finance', desc: 'Accounts, balances' },
+  { id: 'loanApplications', name: 'Loans', icon: '💰', cat: 'finance', desc: 'Credit, terms, status' },
+  { id: 'investments', name: 'Investments', icon: '📈', cat: 'finance', desc: 'Stocks, bonds, crypto' },
+  { id: 'students', name: 'Students', icon: '🎒', cat: 'education', desc: 'GPA, major, enrollment' },
+  { id: 'courses', name: 'Courses', icon: '📚', cat: 'education', desc: 'Credits, schedule' },
+  { id: 'enrollments', name: 'Enrollments', icon: '📝', cat: 'education', desc: 'Grades, attendance' },
+  { id: 'socialPosts', name: 'Social Posts', icon: '💬', cat: 'iot', desc: 'Content, likes, shares' },
+  { id: 'socialUsers', name: 'Social Users', icon: '👥', cat: 'iot', desc: 'Followers, engagement' },
+  { id: 'notifications', name: 'Notifications', icon: '🔔', cat: 'iot', desc: 'Alerts, messages' },
+  { id: 'sensorReadings', name: 'Sensors', icon: '🌡️', cat: 'iot', desc: 'Temperature, humidity' },
+  { id: 'devices', name: 'Devices', icon: '📱', cat: 'iot', desc: 'IoT devices, firmware' },
+  { id: 'alerts', name: 'Alerts', icon: '⚠️', cat: 'iot', desc: 'Severity, thresholds' },
+  { id: 'employees', name: 'Employees', icon: '👔', cat: 'iot', desc: 'HR, salary, performance' },
+  { id: 'jobPostings', name: 'Job Postings', icon: '💼', cat: 'iot', desc: 'Positions, applicants' },
+  { id: 'timesheets', name: 'Timesheets', icon: '⏰', cat: 'iot', desc: 'Hours, billing' },
+];
+
+/* ───────── export helpers ───────── */
+function toCSV(data: any[]): string {
+  if (!data.length) return '';
+  const keys = Object.keys(data[0]);
+  const rows = data.map(r => keys.map(k => { const v = String(r[k] ?? ''); return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v; }).join(','));
+  return [keys.join(','), ...rows].join('\n');
+}
+function toSQL(data: any[], table: string): string {
+  if (!data.length) return '';
+  const keys = Object.keys(data[0]);
+  return data.map(r => {
+    const vals = keys.map(k => { const v = r[k]; return typeof v === 'number' || typeof v === 'boolean' ? String(v) : `'${String(v ?? '').replace(/'/g, "''")}'`; });
+    return `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${vals.join(', ')});`;
+  }).join('\n');
+}
+function toFHIR(data: any[], type: string): string {
+  const entries = data.slice(0, 100).map(r => ({ resource: { resourceType: type === 'patients' ? 'Patient' : 'Observation', id: r.id, ...r } }));
+  return JSON.stringify({ resourceType: 'Bundle', type: 'collection', total: data.length, entry: entries }, null, 2);
+}
+/* applyCustomFields is used internally by custom type generation */
+function applyScenarioRules(data: any[], rules: ScenarioRule[], seed: number): any[] {
+  const rng = new SeededRandom(seed + 7777);
+  return data.map(row => {
+    const newRow = { ...row };
+    rules.forEach(r => {
+      switch (r.action) {
+        case 'fixed': newRow[r.field] = r.value ?? ''; break;
+        case 'range': newRow[r.field] = rng.nextInt(r.min ?? 0, r.max ?? 100); break;
+        case 'null': if (rng.next() * 100 < (r.pct ?? 50)) newRow[r.field] = null; break;
+        case 'oneOf': if (r.values?.length) newRow[r.field] = rng.pick(r.values); break;
+      }
+    });
+    return newRow;
+  });
 }
 
-const DATA_TYPES: DataTypeConfig[] = [
-  { value: 'users', label: 'Users', icon: '👤', description: 'Names, emails, phones, jobs', category: 'general', color: 'from-blue-500/20 to-cyan-500/20' },
-  { value: 'addresses', label: 'Addresses', icon: '🏠', description: 'Streets, cities, ZIP codes', category: 'general', color: 'from-purple-500/20 to-pink-500/20' },
-  { value: 'transactions', label: 'Transactions', icon: '💳', description: 'Payments, amounts, merchants', category: 'general', color: 'from-emerald-500/20 to-teal-500/20' },
-  { value: 'patients', label: 'Patients', icon: '🏥', description: 'Demographics, MRN, allergies', category: 'healthcare', color: 'from-teal-500/20 to-cyan-500/20' },
-  { value: 'medicalRecords', label: 'Medical Records', icon: '📋', description: 'Visits, diagnoses, vitals', category: 'healthcare', color: 'from-blue-500/20 to-indigo-500/20' },
-  { value: 'prescriptions', label: 'Prescriptions', icon: '💊', description: 'Rx orders, meds, dosages', category: 'healthcare', color: 'from-pink-500/20 to-rose-500/20' },
-  { value: 'labResults', label: 'Lab Results', icon: '🔬', description: 'Tests, values, flags', category: 'healthcare', color: 'from-amber-500/20 to-orange-500/20' },
-  { value: 'insuranceClaims', label: 'Insurance Claims', icon: '📄', description: 'Claims, CPT codes, billing', category: 'healthcare', color: 'from-indigo-500/20 to-purple-500/20' },
-  { value: 'healthcareProviders', label: 'Providers', icon: '⚕️', description: 'Doctors, NPI, specialties', category: 'healthcare', color: 'from-emerald-500/20 to-green-500/20' },
-];
+/* ───────── app ───────── */
+export default function App() {
+  // Auth
+  const [page, setPage] = useState<'auth' | 'app'>('auth');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPass, setAuthPass] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authMsg, setAuthMsg] = useState('');
+  const [userName, setUserName] = useState('');
+  const [, setUserEmail] = useState('');
 
-const EXPORT_FORMATS: { value: ExportFormat; label: string; icon: string }[] = [
-  { value: 'json', label: 'JSON', icon: '{ }' },
-  { value: 'csv', label: 'CSV', icon: '📊' },
-  { value: 'sql', label: 'SQL', icon: '🗃️' },
-  { value: 'fhir', label: 'FHIR', icon: '🔥' },
-];
-
-const PRESET_COUNTS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000];
-
-const HEALTHCARE_TYPES: DataType[] = ['patients', 'medicalRecords', 'prescriptions', 'labResults', 'insuranceClaims', 'healthcareProviders'];
-
-export function App() {
-  const { user, profile, loading: authLoading, trackGeneration, trackDownload } = useAuth();
-
-  const [dataType, setDataType] = useState<DataType>('users');
-  const [count, setCount] = useState(25);
-  const [customCount, setCustomCount] = useState('');
+  // Data
+  const [activeCat, setActiveCat] = useState('general');
+  const [selectedType, setSelectedType] = useState('users');
+  const [count, setCount] = useState(100);
   const [seed, setSeed] = useState(42);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('json');
-  const [showExport, setShowExport] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<'general' | 'healthcare'>('general');
-  const [generationTime, setGenerationTime] = useState(0);
-  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'success' | 'fallback'>('idle');
+  const [format, setFormat] = useState<'json' | 'csv' | 'sql' | 'fhir'>('json');
+  const [search, setSearch] = useState('');
+  const [showCode, setShowCode] = useState(false);
 
-  // Scenario state
-  const [showScenarioBuilder, setShowScenarioBuilder] = useState(false);
-  const [activeScenario, setActiveScenario] = useState<Partial<ScenarioConfig> | null>(null);
+  // Custom features
+  const [showCustomType, setShowCustomType] = useState(false);
+  const [showCustomScenario, setShowCustomScenario] = useState(false);
+  const [customTypes, setCustomTypes] = useState<CustomDataType[]>([]);
+  const [customScenarios, setCustomScenarios] = useState<CustomScenario[]>([]);
+  const [activeScenario, setActiveScenario] = useState<string | null>(null);
 
-  // Custom columns state
-  const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
-  const [showCustomColumns, setShowCustomColumns] = useState(false);
+  // Custom type builder
+  const [ctName, setCtName] = useState('');
+  const [ctIcon, setCtIcon] = useState('🔧');
+  const [ctFields, setCtFields] = useState<CustomField[]>([]);
 
-  // Modal states
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showUsageStats, setShowUsageStats] = useState(false);
+  // Custom scenario builder
+  const [csName, setCsName] = useState('');
+  const [csDataType, setCsDataType] = useState('users');
+  const [csRules, setCsRules] = useState<ScenarioRule[]>([]);
 
-  const effectiveCount = customCount ? parseInt(customCount) || count : count;
+  // Generate data
+  const allTypes = [...DATA_TYPES, ...customTypes.map(ct => ({ id: ct.id, name: ct.name, icon: ct.icon, cat: 'custom', desc: ct.fields.length + ' custom fields' }))];
+  const visibleTypes = allTypes.filter(t => t.cat === activeCat);
 
   const data = useMemo(() => {
-    const start = performance.now();
-    let result = generateData(dataType, effectiveCount, seed);
-
-    // Apply scenario if active
-    if (activeScenario) {
-      result = applyScenario(
-        result as unknown as Record<string, unknown>[],
-        activeScenario,
-        seed
-      ) as unknown as FakeData[];
-    }
-
-    // Apply custom columns
-    const enabledCustomCols = customColumns.filter(c => c.enabled && c.name.trim());
-    if (enabledCustomCols.length > 0) {
-      result = applyCustomColumns(
-        result as unknown as Record<string, unknown>[],
-        enabledCustomCols,
-        seed
-      ) as unknown as FakeData[];
-    }
-
-    const elapsed = performance.now() - start;
-    setGenerationTime(elapsed);
-
-    // Track generation
-    if (user) {
-      trackGeneration(dataType, effectiveCount, activeScenario ? 'custom' : undefined);
-    }
-
-    return result;
-  }, [dataType, effectiveCount, seed, activeScenario, customColumns]);
-
-  const columns = useMemo(() => {
-    const baseCols = getColumns(dataType);
-    const enabledCustomCols = customColumns.filter(c => c.enabled && c.name.trim());
-    const customColDefs = enabledCustomCols.map(c => ({ key: c.name, label: c.name }));
-    return [...baseCols, ...customColDefs];
-  }, [dataType, customColumns]);
-
-  const filteredData = useMemo(() => {
-    if (!searchQuery.trim()) return data;
-    const q = searchQuery.toLowerCase();
-    return data.filter(row => {
-      return columns.some(col => {
-        const val = String((row as unknown as Record<string, unknown>)[col.key] ?? '').toLowerCase();
-        return val.includes(q);
-      });
-    });
-  }, [data, searchQuery, columns]);
-
-  const exportedData = useMemo(() => {
-    switch (exportFormat) {
-      case 'json': return exportToJSON(data);
-      case 'csv': return exportToCSV(data, dataType);
-      case 'sql': return exportToSQL(data, dataType);
-      case 'fhir': return exportToHL7FHIR(data, dataType);
-    }
-  }, [data, dataType, exportFormat]);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(exportedData).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [exportedData]);
-
-  const handleDownload = useCallback(() => {
-    const ext = exportFormat === 'json' || exportFormat === 'fhir' ? 'json' : exportFormat === 'csv' ? 'csv' : 'sql';
-    const mime = exportFormat === 'json' || exportFormat === 'fhir' ? 'application/json' : 'text/plain';
-    const filename = `fake_${dataType}_${effectiveCount}.${ext}`;
-    const blob = new Blob([exportedData], { type: mime });
-
-    setDownloadStatus('downloading');
-
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 250);
-
-      setDownloadStatus('success');
-      setTimeout(() => setDownloadStatus('idle'), 3000);
-
-      // Track download
-      if (user) {
-        trackDownload(dataType, effectiveCount, exportFormat);
-      }
-    } catch {
-      try {
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        setDownloadStatus('fallback');
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-          setDownloadStatus('idle');
-        }, 5000);
-      } catch {
-        navigator.clipboard.writeText(exportedData).then(() => {
-          setDownloadStatus('fallback');
-          setTimeout(() => setDownloadStatus('idle'), 3000);
+    const gen = GENERATORS[selectedType];
+    let result: any[];
+    if (gen) {
+      result = gen(count, seed);
+    } else {
+      const ct = customTypes.find(c => c.id === selectedType);
+      if (ct) {
+        const rng = new SeededRandom(seed);
+        result = Array.from({ length: count }, (_, i) => {
+          const row: any = { id: i + 1 };
+          ct.fields.forEach(f => {
+            if (f.nullPct && rng.next() * 100 < f.nullPct) { row[f.name] = null; return; }
+            switch (f.type) {
+              case 'text': row[f.name] = (f.prefix ?? '') + (f.options?.length ? rng.pick(f.options) : 'Value_' + rng.nextInt(1, 9999)) + (f.suffix ?? ''); break;
+              case 'number': row[f.name] = rng.nextInt(f.min ?? 0, f.max ?? 1000); break;
+              case 'boolean': row[f.name] = rng.next() > 0.5; break;
+              case 'date': { const s = new Date(2020, 0).getTime(); const e = Date.now(); row[f.name] = new Date(s + rng.next() * (e - s)).toISOString().split('T')[0]; break; }
+              case 'select': row[f.name] = f.options?.length ? rng.pick(f.options) : ''; break;
+            }
+          });
+          return row;
         });
+      } else {
+        result = [];
       }
     }
-  }, [exportedData, exportFormat, dataType, effectiveCount, user, trackDownload]);
-
-  const randomizeSeed = () => {
-    setSeed(Math.floor(Math.random() * 99999) + 1);
-  };
-
-  const handleApplyScenario = (scenario: Partial<ScenarioConfig> | null) => {
-    setActiveScenario(scenario);
-    setShowScenarioBuilder(false);
-  };
-
-  const isHealthcareType = HEALTHCARE_TYPES.includes(dataType);
-
-  // Find matching preset name
-  const activePreset = useMemo(() => {
-    if (!activeScenario) return null;
-    const match = PRESET_SCENARIOS.find(p =>
-      JSON.stringify(p.config) === JSON.stringify(activeScenario) && p.dataTypes.includes(dataType)
-    );
-    return match ?? null;
-  }, [activeScenario, dataType]);
-
-  // Count how many field rules & global rules are active
-  const scenarioRuleSummary = useMemo(() => {
-    if (!activeScenario) return null;
-    const fieldCount = activeScenario.fieldRules ? Object.keys(activeScenario.fieldRules).length : 0;
-    const globalRules: string[] = [];
-    if (activeScenario.nullRate && activeScenario.nullRate > 0) globalRules.push(`${activeScenario.nullRate}% nulls`);
-    if (activeScenario.duplicateRate && activeScenario.duplicateRate > 0) globalRules.push(`${activeScenario.duplicateRate}% dupes`);
-    if (activeScenario.errorRate && activeScenario.errorRate > 0) globalRules.push(`${activeScenario.errorRate}% errors`);
-    return { fieldCount, globalRules };
-  }, [activeScenario]);
-
-  const getCellDisplay = (row: FakeData, key: string) => {
-    const value = (row as unknown as Record<string, unknown>)[key];
-
-    // Handle null/undefined from scenarios
-    if (value === null || value === undefined) {
-      return <span className="text-[11px] text-dark-600 italic font-[JetBrains_Mono,monospace]">null</span>;
+    // Apply active scenario
+    const scenario = customScenarios.find(s => s.id === activeScenario);
+    if (scenario && scenario.dataType === selectedType) {
+      result = applyScenarioRules(result, scenario.rules, seed);
     }
+    return result;
+  }, [selectedType, count, seed, customTypes, activeScenario, customScenarios]);
 
-    // Handle error values
-    if (typeof value === 'string' && value.startsWith('##ERR##')) {
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md ring-1 ring-red-500/20 font-[JetBrains_Mono,monospace]">
-          ⚠ {value}
-        </span>
-      );
-    }
+  const columns = data.length > 0 ? Object.keys(data[0]) : [];
+  const filtered = useMemo(() => {
+    if (!search) return data;
+    const q = search.toLowerCase();
+    return data.filter(r => Object.values(r).some(v => String(v ?? '').toLowerCase().includes(q)));
+  }, [data, search]);
 
-    if (typeof value === 'boolean') {
-      return (
-        <span className={cn(
-          'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide uppercase',
-          value
-            ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/20'
-            : 'bg-red-500/15 text-red-400 ring-1 ring-red-500/20'
-        )}>
-          <span className={cn('w-1.5 h-1.5 rounded-full', value ? 'bg-emerald-400' : 'bg-red-400')} />
-          {key === 'acceptingPatients' ? (value ? 'Yes' : 'No') : (value ? 'Active' : 'Inactive')}
-        </span>
-      );
-    }
+  const exportStr = useMemo(() => {
+    if (format === 'csv') return toCSV(data);
+    if (format === 'sql') return toSQL(data, selectedType);
+    if (format === 'fhir') return toFHIR(data, selectedType);
+    return JSON.stringify(data.slice(0, 200), null, 2);
+  }, [data, format, selectedType]);
 
-    if (key === 'flag') {
-      const flagConfig: Record<string, { bg: string; text: string; icon: string }> = {
-        'Normal': { bg: 'bg-emerald-500/15 ring-emerald-500/20', text: 'text-emerald-400', icon: '✓' },
-        'High': { bg: 'bg-red-500/15 ring-red-500/20', text: 'text-red-400', icon: '↑' },
-        'Low': { bg: 'bg-amber-500/15 ring-amber-500/20', text: 'text-amber-400', icon: '↓' },
-        'Critical': { bg: 'bg-red-600/20 ring-red-500/30', text: 'text-red-300', icon: '⚠' },
-      };
-      const cfg = flagConfig[String(value)] ?? { bg: 'bg-dark-600 ring-dark-500', text: 'text-dark-200', icon: '' };
-      return (
-        <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1', cfg.bg, cfg.text)}>
-          {cfg.icon} {String(value)}
-        </span>
-      );
-    }
-
-    if (key === 'type' && dataType === 'transactions') {
-      return (
-        <span className={cn(
-          'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1',
-          value === 'credit'
-            ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/20'
-            : 'bg-amber-500/15 text-amber-400 ring-amber-500/20'
-        )}>
-          {value === 'credit' ? '↗' : '↙'} {String(value)}
-        </span>
-      );
-    }
-
-    if (key === 'status') {
-      const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
-        'Completed': { bg: 'bg-emerald-500/10 ring-emerald-500/20', text: 'text-emerald-400', dot: 'bg-emerald-400' },
-        'Active': { bg: 'bg-emerald-500/10 ring-emerald-500/20', text: 'text-emerald-400', dot: 'bg-emerald-400' },
-        'Signed': { bg: 'bg-emerald-500/10 ring-emerald-500/20', text: 'text-emerald-400', dot: 'bg-emerald-400' },
-        'Approved': { bg: 'bg-emerald-500/10 ring-emerald-500/20', text: 'text-emerald-400', dot: 'bg-emerald-400' },
-        'Final': { bg: 'bg-emerald-500/10 ring-emerald-500/20', text: 'text-emerald-400', dot: 'bg-emerald-400' },
-        'Filled': { bg: 'bg-emerald-500/10 ring-emerald-500/20', text: 'text-emerald-400', dot: 'bg-emerald-400' },
-        'Pending': { bg: 'bg-yellow-500/10 ring-yellow-500/20', text: 'text-yellow-400', dot: 'bg-yellow-400' },
-        'Pending Review': { bg: 'bg-yellow-500/10 ring-yellow-500/20', text: 'text-yellow-400', dot: 'bg-yellow-400' },
-        'In Review': { bg: 'bg-yellow-500/10 ring-yellow-500/20', text: 'text-yellow-400', dot: 'bg-yellow-400' },
-        'Refill Requested': { bg: 'bg-yellow-500/10 ring-yellow-500/20', text: 'text-yellow-400', dot: 'bg-yellow-400' },
-        'Preliminary': { bg: 'bg-yellow-500/10 ring-yellow-500/20', text: 'text-yellow-400', dot: 'bg-yellow-400' },
-        'Processing': { bg: 'bg-blue-500/10 ring-blue-500/20', text: 'text-blue-400', dot: 'bg-blue-400' },
-        'In Progress': { bg: 'bg-blue-500/10 ring-blue-500/20', text: 'text-blue-400', dot: 'bg-blue-400' },
-        'Observation': { bg: 'bg-blue-500/10 ring-blue-500/20', text: 'text-blue-400', dot: 'bg-blue-400' },
-        'Provisional': { bg: 'bg-blue-500/10 ring-blue-500/20', text: 'text-blue-400', dot: 'bg-blue-400' },
-        'Admitted': { bg: 'bg-indigo-500/10 ring-indigo-500/20', text: 'text-indigo-400', dot: 'bg-indigo-400' },
-        'On Hold': { bg: 'bg-orange-500/10 ring-orange-500/20', text: 'text-orange-400', dot: 'bg-orange-400' },
-        'On Leave': { bg: 'bg-orange-500/10 ring-orange-500/20', text: 'text-orange-400', dot: 'bg-orange-400' },
-        'Partially Approved': { bg: 'bg-orange-500/10 ring-orange-500/20', text: 'text-orange-400', dot: 'bg-orange-400' },
-        'Partial Fill': { bg: 'bg-orange-500/10 ring-orange-500/20', text: 'text-orange-400', dot: 'bg-orange-400' },
-        'Failed': { bg: 'bg-red-500/10 ring-red-500/20', text: 'text-red-400', dot: 'bg-red-400' },
-        'Denied': { bg: 'bg-red-500/10 ring-red-500/20', text: 'text-red-400', dot: 'bg-red-400' },
-        'Cancelled': { bg: 'bg-dark-500/30 ring-dark-400/20', text: 'text-dark-300', dot: 'bg-dark-400' },
-        'Expired': { bg: 'bg-dark-500/30 ring-dark-400/20', text: 'text-dark-300', dot: 'bg-dark-400' },
-        'Inactive': { bg: 'bg-dark-500/30 ring-dark-400/20', text: 'text-dark-300', dot: 'bg-dark-400' },
-        'Retired': { bg: 'bg-dark-500/30 ring-dark-400/20', text: 'text-dark-300', dot: 'bg-dark-400' },
-        'Deceased': { bg: 'bg-dark-600/50 ring-dark-500/30', text: 'text-dark-300', dot: 'bg-dark-400' },
-        'Discharged': { bg: 'bg-teal-500/10 ring-teal-500/20', text: 'text-teal-400', dot: 'bg-teal-400' },
-        'Transferred': { bg: 'bg-purple-500/10 ring-purple-500/20', text: 'text-purple-400', dot: 'bg-purple-400' },
-        'Appealed': { bg: 'bg-purple-500/10 ring-purple-500/20', text: 'text-purple-400', dot: 'bg-purple-400' },
-        'Resubmitted': { bg: 'bg-cyan-500/10 ring-cyan-500/20', text: 'text-cyan-400', dot: 'bg-cyan-400' },
-        'Amended': { bg: 'bg-cyan-500/10 ring-cyan-500/20', text: 'text-cyan-400', dot: 'bg-cyan-400' },
-        'Corrected': { bg: 'bg-cyan-500/10 ring-cyan-500/20', text: 'text-cyan-400', dot: 'bg-cyan-400' },
-      };
-      const cfg = statusColors[String(value)] ?? { bg: 'bg-dark-600 ring-dark-500', text: 'text-dark-200', dot: 'bg-dark-400' };
-      return (
-        <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1', cfg.bg, cfg.text)}>
-          <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
-          {String(value)}
-        </span>
-      );
-    }
-
-    if (key === 'bloodType') {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-400 ring-1 ring-red-500/20 font-[JetBrains_Mono,monospace]">
-          🩸 {String(value)}
-        </span>
-      );
-    }
-
-    if (['amount', 'chargedAmount', 'allowedAmount', 'paidAmount', 'patientResponsibility'].includes(key)) {
-      if (key === 'amount' && dataType === 'transactions') {
-        const txRow = row as unknown as Record<string, unknown>;
-        const isCredit = txRow['type'] === 'credit';
-        return (
-          <span className={cn('font-[JetBrains_Mono,monospace] text-[13px] font-medium', isCredit ? 'text-emerald-400' : 'text-dark-100')}>
-            {isCredit ? '+' : '-'}${String(value)}
-          </span>
-        );
+  // Auth handlers
+  const handleAuth = async () => {
+    setAuthError(''); setAuthMsg('');
+    try {
+      if (authMode === 'signup') {
+        const { error } = await supabase.auth.signUp({ email: authEmail, password: authPass, options: { data: { full_name: authName } } });
+        if (error) throw error;
+        setAuthMsg('Check your email to confirm, or continue as guest.');
+      } else {
+        const { data: d, error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPass });
+        if (error) throw error;
+        setUserName(d.user?.user_metadata?.full_name || authEmail.split('@')[0]);
+        setUserEmail(d.user?.email || '');
+        setPage('app');
       }
-      return <span className="font-[JetBrains_Mono,monospace] text-[13px] font-medium text-dark-100">${String(value)}</span>;
-    }
-
-    if (key === 'rating') {
-      const rating = parseFloat(String(value));
-      return (
-        <span className="inline-flex items-center gap-1.5">
-          <span className="text-amber-400 text-xs">★</span>
-          <span className="font-[JetBrains_Mono,monospace] text-[13px] font-semibold text-amber-300">{isNaN(rating) ? String(value) : rating.toFixed(1)}</span>
-        </span>
-      );
-    }
-
-    if (key === 'oxygenSat') {
-      const spO2 = Number(value);
-      return (
-        <span className={cn('font-[JetBrains_Mono,monospace] text-[13px] font-medium', spO2 < 95 ? 'text-red-400 font-bold' : 'text-dark-100')}>
-          {isNaN(spO2) ? String(value) : `${spO2}%`}
-        </span>
-      );
-    }
-
-    if (['systolicBP', 'diastolicBP', 'heartRate', 'respiratoryRate'].includes(key)) {
-      return <span className="font-[JetBrains_Mono,monospace] text-[13px] text-dark-100">{String(value)}</span>;
-    }
-
-    if (key === 'temperature') {
-      const temp = parseFloat(String(value));
-      return (
-        <span className={cn('font-[JetBrains_Mono,monospace] text-[13px]', temp > 100.4 ? 'text-red-400 font-bold' : 'text-dark-100')}>
-          {isNaN(temp) ? String(value) : `${String(value)}°F`}
-        </span>
-      );
-    }
-
-    if (['diagnosisCode', 'procedureCode', 'testCode'].includes(key)) {
-      return (
-        <span className="inline-flex items-center rounded-md bg-dark-650 px-2 py-0.5 font-[JetBrains_Mono,monospace] text-[11px] font-medium text-accent-cyan ring-1 ring-dark-550">
-          {String(value)}
-        </span>
-      );
-    }
-
-    if (key === 'mrn') {
-      return <span className="font-[JetBrains_Mono,monospace] text-[12px] font-medium text-cyan-400">{String(value)}</span>;
-    }
-
-    if (key === 'npi') {
-      return <span className="font-[JetBrains_Mono,monospace] text-[12px] text-dark-200">{String(value)}</span>;
-    }
-
-    if (key === 'id') {
-      return <span className="font-[JetBrains_Mono,monospace] text-[11px] text-dark-400">{String(value).slice(0, 8)}…</span>;
-    }
-
-    if (key === 'email') {
-      return <span className="text-[13px] text-blue-400">{String(value)}</span>;
-    }
-
-    if (key === 'allergies') {
-      if (String(value) === 'NKDA') {
-        return <span className="text-[12px] text-dark-400 italic">NKDA</span>;
-      }
-      return <span className="text-[12px] text-amber-400/80">{String(value)}</span>;
-    }
-
-    // NaN check for number-type-mismatch errors
-    if (value === -1 || value === 'NaN') {
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-md ring-1 ring-orange-500/20 font-[JetBrains_Mono,monospace]">
-          ⚠ {String(value)}
-        </span>
-      );
-    }
-
-    return <span className="text-[13px] text-dark-100">{String(value ?? '')}</span>;
+    } catch (e: any) { setAuthError(e.message || 'Authentication failed'); }
   };
 
-  const displayedCount = Math.min(filteredData.length, 500);
-  const exportSize = formatBytes(new Blob([exportedData]).size);
+  const guestLogin = () => { setUserName('Guest'); setUserEmail('guest@demo.com'); setPage('app'); };
+  const signOut = async () => { await supabase.auth.signOut(); setPage('auth'); setUserName(''); setUserEmail(''); };
 
-  // Show loading state
-  if (authLoading) {
+  // Download
+  const handleDownload = useCallback(() => {
+    const ext = format === 'fhir' ? 'json' : format;
+    const mime = format === 'csv' ? 'text/csv' : format === 'sql' ? 'text/sql' : 'application/json';
+    const content = format === 'csv' ? toCSV(data) : format === 'sql' ? toSQL(data, selectedType) : format === 'fhir' ? toFHIR(data, selectedType) : JSON.stringify(data, null, 2);
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${selectedType}_${count}.${ext}`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+  }, [data, format, selectedType, count]);
+
+  // Custom type helpers
+  const addField = () => setCtFields(p => [...p, { id: Date.now().toString(), name: '', type: 'text' }]);
+  const removeField = (id: string) => setCtFields(p => p.filter(f => f.id !== id));
+  const updateField = (id: string, updates: Partial<CustomField>) => setCtFields(p => p.map(f => f.id === id ? { ...f, ...updates } : f));
+  const saveCustomType = () => {
+    if (!ctName.trim() || ctFields.length === 0) return;
+    const id = 'custom_' + Date.now();
+    setCustomTypes(p => [...p, { id, name: ctName, icon: ctIcon, fields: ctFields.filter(f => f.name.trim()) }]);
+    setCtName(''); setCtIcon('🔧'); setCtFields([]); setShowCustomType(false);
+    setActiveCat('custom');
+    setSelectedType(id);
+  };
+
+  // Custom scenario helpers
+  const addRule = () => setCsRules(p => [...p, { field: '', action: 'fixed', value: '' }]);
+  const removeRule = (i: number) => setCsRules(p => p.filter((_, idx) => idx !== i));
+  const updateRule = (i: number, updates: Partial<ScenarioRule>) => setCsRules(p => p.map((r, idx) => idx === i ? { ...r, ...updates } : r));
+  const saveScenario = () => {
+    if (!csName.trim() || csRules.length === 0) return;
+    const id = 'scenario_' + Date.now();
+    setCustomScenarios(p => [...p, { id, name: csName, dataType: csDataType, rules: csRules.filter(r => r.field.trim()) }]);
+    setCsName(''); setCsRules([]); setShowCustomScenario(false);
+  };
+
+  const availableFields = data.length > 0 ? Object.keys(data[0]) : [];
+
+  /* ═══════ AUTH PAGE ═══════ */
+  if (page === 'auth') {
     return (
-      <div className="min-h-screen bg-dark-950 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 8h6M9 16h3" />
-            </svg>
+      <div style={{ minHeight: '100vh', background: '#08090d', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <div style={{ maxWidth: 1100, width: '100%', margin: '0 auto', padding: 20, display: 'flex', gap: 60, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {/* Left side */}
+          <div style={{ flex: 1, minWidth: 320, maxWidth: 520 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>⚡</div>
+              <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, background: 'linear-gradient(135deg, #06b6d4, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>DataForge</h1>
+            </div>
+            <h2 style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.3, marginBottom: 16, color: '#e2e8f0' }}>Generate Realistic Synthetic Data in Seconds</h2>
+            <p style={{ color: '#94a3b8', fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>Create test data for users, healthcare, e-commerce, finance, education, IoT & more. Export as JSON, CSV, SQL, or FHIR.</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+              {CATEGORIES.map(c => (
+                <span key={c.id} style={{ padding: '6px 14px', borderRadius: 20, background: c.color + '20', color: c.color, fontSize: 13, fontWeight: 600, border: `1px solid ${c.color}40` }}>{c.label}</span>
+              ))}
+              {customTypes.length > 0 && <span style={{ padding: '6px 14px', borderRadius: 20, background: '#10b98120', color: '#10b981', fontSize: 13, fontWeight: 600, border: '1px solid #10b98140' }}>🔧 Custom ({customTypes.length})</span>}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {['27+ Data Types', '50K Records', 'Custom Fields', 'Custom Scenarios', 'JSON / CSV / SQL / FHIR'].map(f => (
+                <span key={f} style={{ padding: '4px 12px', borderRadius: 12, background: '#1e293b', color: '#94a3b8', fontSize: 12, border: '1px solid #334155' }}>✓ {f}</span>
+              ))}
+            </div>
+            <div style={{ marginTop: 24 }}>
+              <a href="https://www.producthunt.com/products/dataforge-synthetic-data-generator" target="_blank" rel="noopener noreferrer">
+                <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1077479&theme=dark&t=1770829437528" alt="DataForge on Product Hunt" width="200" height="43" />
+              </a>
+            </div>
           </div>
-          <p className="text-dark-400">Loading DataForge...</p>
+
+          {/* Right side - Auth form */}
+          <div style={{ width: 380, background: '#111318', borderRadius: 16, padding: 32, border: '1px solid #1e293b' }}>
+            <h3 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>{authMode === 'signin' ? 'Welcome Back' : 'Create Account'}</h3>
+            <p style={{ color: '#64748b', fontSize: 14, marginBottom: 24 }}>{authMode === 'signin' ? 'Sign in to continue' : 'Get started for free'}</p>
+
+            {authError && <div style={{ padding: '10px 14px', borderRadius: 8, background: '#7f1d1d40', border: '1px solid #dc2626', color: '#fca5a5', fontSize: 13, marginBottom: 16 }}>{authError}</div>}
+            {authMsg && <div style={{ padding: '10px 14px', borderRadius: 8, background: '#14532d40', border: '1px solid #16a34a', color: '#86efac', fontSize: 13, marginBottom: 16 }}>{authMsg}</div>}
+
+            {authMode === 'signup' && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Full Name</label>
+                <input value={authName} onChange={e => setAuthName(e.target.value)} placeholder="John Doe" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f1117', color: '#fff', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+            )}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Email</label>
+              <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="you@example.com" type="email" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f1117', color: '#fff', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Password</label>
+              <input value={authPass} onChange={e => setAuthPass(e.target.value)} placeholder="••••••••" type="password" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f1117', color: '#fff', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} onKeyDown={e => e.key === 'Enter' && handleAuth()} />
+            </div>
+
+            <button onClick={handleAuth} style={{ width: '100%', padding: '12px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 12 }}>
+              {authMode === 'signin' ? 'Sign In' : 'Create Account'}
+            </button>
+
+            <button onClick={guestLogin} style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontSize: 14, cursor: 'pointer', marginBottom: 20 }}>
+              Continue as Guest →
+            </button>
+
+            <p style={{ textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+              {authMode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
+              <span onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(''); setAuthMsg(''); }} style={{ color: '#06b6d4', cursor: 'pointer', fontWeight: 600 }}>
+                {authMode === 'signin' ? 'Sign Up' : 'Sign In'}
+              </span>
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Show landing page if not logged in
-  if (!user) {
-    return <LandingPage />;
-  }
-
+  /* ═══════ MAIN APP ═══════ */
   return (
-    <div className="min-h-screen bg-dark-950 relative overflow-hidden">
-      {/* Background ambient effects */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-cyan-500/[0.03] rounded-full blur-[150px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-500/[0.03] rounded-full blur-[150px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/[0.02] rounded-full blur-[200px]" />
-      </div>
-
+    <div style={{ minHeight: '100vh', background: '#08090d', color: '#e2e8f0', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* Header */}
-      <header className="relative z-30 border-b border-dark-700/50 glass sticky top-0">
-        <div className="max-w-[1920px] mx-auto px-5 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 8h6M9 16h3" />
-                  </svg>
-                </div>
-                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-dark-900 animate-glow" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                  DataForge
-                  <span className="text-[10px] font-semibold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent uppercase tracking-widest border border-cyan-500/20 rounded-full px-2 py-0.5">
-                    Pro
-                  </span>
-                </h1>
-                <p className="text-[12px] text-dark-300 tracking-wide">Synthetic data generator for apps & healthcare</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Product Hunt Badge */}
-              <a
-                href="https://www.producthunt.com/products/dataforge-synthetic-data-generator?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-dataforge-synthetic-data-generator"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hidden lg:block flex-shrink-0 hover:opacity-90 transition-opacity"
-              >
-                <img
-                  src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1077479&theme=dark&t=1770829437528"
-                  alt="DataForge — Synthetic Data Generator - Generate realistic test data with custom scenarios | Product Hunt"
-                  width="250"
-                  height="54"
-                  className="h-[40px] w-auto"
-                />
-              </a>
-              
-              {/* Active Scenario badge in header */}
-              {activeScenario && (
-                <button
-                  onClick={() => setShowScenarioBuilder(true)}
-                  className="hidden md:flex items-center gap-2 bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-lg px-3 py-2 hover:border-purple-500/30 transition-all group"
-                >
-                  <span className="text-sm">{activePreset?.icon ?? '🎬'}</span>
-                  <span className="text-[12px] font-semibold text-purple-300 group-hover:text-purple-200 transition-colors">
-                    {activePreset?.name ?? 'Custom Scenario'}
-                  </span>
-                  <div className="w-2 h-2 rounded-full bg-purple-400 animate-glow" />
-                </button>
-              )}
-              <div className="hidden md:flex items-center gap-2 bg-dark-800 border border-dark-650 rounded-lg px-3 py-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-glow" />
-                <span className="text-[12px] font-medium text-dark-200 font-[JetBrains_Mono,monospace]">
-                  {filteredData.length.toLocaleString()}<span className="text-dark-400"> / </span>{data.length.toLocaleString()}
-                </span>
-                <span className="text-dark-500">records</span>
-              </div>
-              <div className="hidden sm:flex items-center gap-2 bg-dark-800 border border-dark-650 rounded-lg px-3 py-2">
-                <span className="text-[11px] text-dark-400">⚡</span>
-                <span className="text-[12px] font-[JetBrains_Mono,monospace] text-dark-200">
-                  {generationTime < 1 ? '<1' : Math.round(generationTime)}ms
-                </span>
-              </div>
-
-              {/* User Avatar */}
-              <button
-                onClick={() => setShowUsageStats(true)}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-dark-800 border border-dark-650 hover:border-dark-500 hover:bg-dark-750 transition-all group"
-              >
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={profile.full_name || 'User'}
-                    className="w-7 h-7 rounded-lg object-cover border border-dark-600"
-                  />
-                ) : (
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-[12px] font-bold text-white">
-                    {(profile?.full_name || profile?.email || 'U')[0].toUpperCase()}
-                  </div>
-                )}
-                <div className="hidden lg:block text-left">
-                  <div className="text-[12px] font-semibold text-dark-100 group-hover:text-white transition-colors">
-                    {profile?.full_name || 'User'}
-                  </div>
-                  <div className="text-[10px] text-dark-500 font-[JetBrains_Mono,monospace]">
-                    {profile?.total_generations || 0} gen{(profile?.total_generations || 0) !== 1 ? 's' : ''}
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
+      <header style={{ background: '#0f1117', borderBottom: '1px solid #1e293b', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, position: 'sticky', top: 0, zIndex: 50 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>⚡</div>
+          <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, background: 'linear-gradient(135deg, #06b6d4, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>DataForge</h1>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <a href="https://www.producthunt.com/products/dataforge-synthetic-data-generator" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1077479&theme=dark&t=1770829437528" alt="Product Hunt" width="160" height="34" />
+          </a>
+          <span style={{ padding: '4px 12px', borderRadius: 12, background: '#1e293b', color: '#94a3b8', fontSize: 12 }}>👤 {userName || 'User'}</span>
+          <button onClick={signOut} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer' }}>Sign Out</button>
         </div>
       </header>
 
-      <div className="relative z-10 max-w-[1920px] mx-auto px-5 lg:px-8 py-6">
+      <main style={{ maxWidth: 1400, margin: '0 auto', padding: 24 }}>
         {/* Category Tabs */}
-        <div className="flex gap-2 mb-6">
-          {[
-            { key: 'general' as const, label: 'General Data', icon: '📊', gradient: 'from-blue-500 to-cyan-500' },
-            { key: 'healthcare' as const, label: 'Healthcare / HIPAA', icon: '🏥', gradient: 'from-teal-500 to-emerald-500' },
-          ].map(cat => (
-            <button
-              key={cat.key}
-              onClick={() => setActiveCategory(cat.key)}
-              className={cn(
-                'flex items-center gap-2.5 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 border',
-                activeCategory === cat.key
-                  ? `bg-gradient-to-r ${cat.gradient} text-white border-transparent shadow-lg ${cat.key === 'general' ? 'shadow-blue-500/20' : 'shadow-teal-500/20'}`
-                  : 'bg-dark-800/60 text-dark-200 border-dark-650 hover:border-dark-500 hover:text-dark-100 hover:bg-dark-750'
-              )}
-            >
-              <span className="text-lg">{cat.icon}</span>
-              {cat.label}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+          {CATEGORIES.map(c => (
+            <button key={c.id} onClick={() => setActiveCat(c.id)}
+              style={{ padding: '8px 18px', borderRadius: 10, border: activeCat === c.id ? `2px solid ${c.color}` : '2px solid #1e293b', background: activeCat === c.id ? c.color + '20' : '#111318', color: activeCat === c.id ? c.color : '#64748b', fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
+              {c.label}
+            </button>
+          ))}
+          {customTypes.length > 0 && (
+            <button onClick={() => setActiveCat('custom')}
+              style={{ padding: '8px 18px', borderRadius: 10, border: activeCat === 'custom' ? '2px solid #10b981' : '2px solid #1e293b', background: activeCat === 'custom' ? '#10b98120' : '#111318', color: activeCat === 'custom' ? '#10b981' : '#64748b', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              🔧 Custom ({customTypes.length})
+            </button>
+          )}
+        </div>
+
+        {/* Data Type Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 20 }}>
+          {visibleTypes.map(t => (
+            <button key={t.id} onClick={() => setSelectedType(t.id)}
+              style={{ padding: '14px', borderRadius: 12, border: selectedType === t.id ? `2px solid ${CATEGORIES.find(c => c.id === activeCat)?.color || '#10b981'}` : '2px solid #1e293b', background: selectedType === t.id ? (CATEGORIES.find(c => c.id === activeCat)?.color || '#10b981') + '15' : '#111318', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}>
+              <div style={{ fontSize: 24, marginBottom: 6 }}>{t.icon}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>{t.name}</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{t.desc}</div>
             </button>
           ))}
         </div>
 
-        {/* Data Type Cards */}
-        <div className="mb-7">
-          <label className="block text-[11px] font-semibold text-dark-400 uppercase tracking-[0.15em] mb-3 ml-1">
-            Select Data Type
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {DATA_TYPES.filter(dt => dt.category === activeCategory).map(dt => (
-              <button
-                key={dt.value}
-                onClick={() => { setDataType(dt.value); setSearchQuery(''); }}
-                className={cn(
-                  'relative rounded-xl border p-4 text-left transition-all duration-300 group overflow-hidden',
-                  dataType === dt.value
-                    ? 'border-cyan-500/40 bg-dark-800 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/20'
-                    : 'border-dark-650 bg-dark-800/40 hover:border-dark-500 hover:bg-dark-800/70'
-                )}
-              >
-                {dataType === dt.value && (
-                  <div className={cn('absolute inset-0 bg-gradient-to-br opacity-30', dt.color)} />
-                )}
-                <div className="relative">
-                  <div className="text-2xl mb-2 filter drop-shadow-lg">{dt.icon}</div>
-                  <div className={cn(
-                    'font-semibold text-sm leading-tight',
-                    dataType === dt.value ? 'text-white' : 'text-dark-100'
-                  )}>{dt.label}</div>
-                  <div className="text-[11px] text-dark-400 mt-1.5 leading-snug">{dt.description}</div>
-                </div>
-                {dataType === dt.value && (
-                  <div className="absolute top-3 right-3">
-                    <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-lg shadow-cyan-400/50 animate-glow" />
-                  </div>
-                )}
+        {/* Custom Data Type & Scenario Buttons */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+          <button onClick={() => setShowCustomType(true)} style={{ padding: '10px 20px', borderRadius: 10, border: '2px dashed #334155', background: '#111318', color: '#06b6d4', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 20 }}>＋</span> Create Custom Data Type
+          </button>
+          <button onClick={() => setShowCustomScenario(true)} style={{ padding: '10px 20px', borderRadius: 10, border: '2px dashed #334155', background: '#111318', color: '#a855f7', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 20 }}>🎬</span> Create Custom Scenario
+          </button>
+          {customScenarios.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#64748b' }}>Scenarios:</span>
+              {customScenarios.map(s => (
+                <button key={s.id} onClick={() => { setActiveScenario(activeScenario === s.id ? null : s.id); setSelectedType(s.dataType); }}
+                  style={{ padding: '4px 12px', borderRadius: 8, border: activeScenario === s.id ? '1px solid #a855f7' : '1px solid #334155', background: activeScenario === s.id ? '#a855f720' : '#1e293b', color: activeScenario === s.id ? '#a855f7' : '#94a3b8', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                  {s.name} {activeScenario === s.id && '✓'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Count */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {[10, 50, 100, 500, 1000, 5000, 10000, 50000].map(n => (
+              <button key={n} onClick={() => setCount(n)}
+                style={{ padding: '6px 12px', borderRadius: 8, border: count === n ? '1px solid #06b6d4' : '1px solid #1e293b', background: count === n ? '#06b6d420' : '#111318', color: count === n ? '#06b6d4' : '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                {n >= 1000 ? (n / 1000) + 'K' : n}
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Custom Scenario Section */}
-        <div className="mb-7">
-          <div className={cn(
-            'rounded-xl border overflow-hidden transition-all duration-300',
-            activeScenario
-              ? 'border-purple-500/30 bg-gradient-to-r from-purple-500/5 via-dark-800/40 to-pink-500/5'
-              : 'border-dark-650 bg-dark-800/40'
-          )}>
-            <div className="flex items-center justify-between px-5 py-4">
-              <div className="flex items-center gap-4">
-                <div className={cn(
-                  'h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all',
-                  activeScenario
-                    ? 'bg-gradient-to-br from-purple-500 to-pink-600 shadow-lg shadow-purple-500/20'
-                    : 'bg-dark-750 border border-dark-600'
-                )}>
-                  <span className="text-lg">{activeScenario ? (activePreset?.icon ?? '🎬') : '🎬'}</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-white">Custom Scenarios</h3>
-                    {activeScenario ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 text-[10px] font-bold ring-1 ring-purple-500/20 uppercase tracking-wider">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-glow" />
-                        Active
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-dark-500 bg-dark-750 px-2 py-0.5 rounded-full">
-                        Optional
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[12px] text-dark-400 mt-0.5">
-                    {activeScenario
-                      ? (activePreset ? activePreset.description : 'Custom field rules and data quality settings applied')
-                      : 'Define data patterns, edge cases, null rates, duplicate records, and field constraints'
-                    }
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {activeScenario && (
-                  <button
-                    onClick={() => setActiveScenario(null)}
-                    className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-[12px] font-medium border border-red-500/20 hover:bg-red-500/20 transition-all"
-                  >
-                    ✕ Clear
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowScenarioBuilder(true)}
-                  className={cn(
-                    'flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all active:scale-[0.98]',
-                    activeScenario
-                      ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30 hover:from-purple-500/30 hover:to-pink-500/30'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30'
-                  )}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {activeScenario ? 'Edit Scenario' : 'Configure Scenario'}
-                </button>
-              </div>
-            </div>
-
-            {/* Active scenario summary badges */}
-            {activeScenario && scenarioRuleSummary && (
-              <div className="px-5 pb-4 flex flex-wrap gap-2">
-                {scenarioRuleSummary.globalRules.map((rule, i) => (
-                  <span key={i} className={cn(
-                    'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium ring-1',
-                    rule.includes('null') ? 'bg-amber-500/10 text-amber-400 ring-amber-500/20' :
-                    rule.includes('dupe') ? 'bg-purple-500/10 text-purple-400 ring-purple-500/20' :
-                    'bg-red-500/10 text-red-400 ring-red-500/20'
-                  )}>
-                    {rule.includes('null') ? '🕳️' : rule.includes('dupe') ? '👯' : '💥'} {rule}
-                  </span>
-                ))}
-                {scenarioRuleSummary.fieldCount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 text-[11px] font-medium ring-1 ring-cyan-500/20">
-                    🎛️ {scenarioRuleSummary.fieldCount} field {scenarioRuleSummary.fieldCount === 1 ? 'rule' : 'rules'}
-                  </span>
-                )}
-                {activeScenario.fieldRules && Object.entries(activeScenario.fieldRules).map(([field, rule]) => {
-                  if (!rule.enabled) return null;
-                  const parts: string[] = [];
-                  if (rule.fixedValue) parts.push(`= "${rule.fixedValue}"`);
-                  if (rule.customValues && rule.customValues.length > 0) parts.push(`${rule.customValues.length} values`);
-                  if (rule.minValue !== undefined) parts.push(`≥ ${rule.minValue}`);
-                  if (rule.maxValue !== undefined) parts.push(`≤ ${rule.maxValue}`);
-                  if (rule.dateStart) parts.push(`from ${rule.dateStart}`);
-                  if (rule.dateEnd) parts.push(`to ${rule.dateEnd}`);
-                  if (rule.nullPercent && rule.nullPercent > 0) parts.push(`${rule.nullPercent}% null`);
-                  if (parts.length === 0) return null;
-                  return (
-                    <span key={field} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-dark-750 text-dark-200 text-[11px] font-medium ring-1 ring-dark-600">
-                      <span className="font-[JetBrains_Mono,monospace] text-cyan-400/80">{field}</span>
-                      <span className="text-dark-500">→</span>
-                      <span className="text-dark-300">{parts.join(', ')}</span>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Controls Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-7">
-          {/* Record Count */}
-          <div className="lg:col-span-6 bg-dark-800/40 border border-dark-650 rounded-xl p-5">
-            <label className="block text-[11px] font-semibold text-dark-400 uppercase tracking-[0.15em] mb-3">
-              Record Count
-            </label>
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {PRESET_COUNTS.map(c => (
-                <button
-                  key={c}
-                  onClick={() => { setCount(c); setCustomCount(''); }}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 border',
-                    count === c && !customCount
-                      ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30 shadow-sm shadow-cyan-500/10'
-                      : 'bg-dark-750 text-dark-300 border-dark-600 hover:border-dark-500 hover:text-dark-200',
-                    c >= 10000 ? 'text-[11px]' : ''
-                  )}
-                >
-                  {c >= 1000 ? `${(c / 1000).toFixed(c % 1000 === 0 ? 0 : 1)}K` : c}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-dark-400 uppercase tracking-wider font-medium">Custom</span>
-              <input
-                type="number"
-                min={1}
-                max={100000}
-                value={customCount}
-                onChange={e => setCustomCount(e.target.value)}
-                placeholder="e.g. 7500"
-                className="w-36 rounded-lg border border-dark-600 bg-dark-750 px-3 py-2 text-[13px] font-[JetBrains_Mono,monospace] text-dark-100 placeholder:text-dark-500 focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/30 outline-none transition-all"
-              />
-              {customCount && (
-                <button
-                  onClick={() => setCustomCount('')}
-                  className="text-[11px] text-dark-400 hover:text-dark-200 transition-colors"
-                >
-                  ✕ Clear
-                </button>
-              )}
-              {effectiveCount > 10000 && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-400/80 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
-                  ⚡ Large dataset
-                </span>
-              )}
-            </div>
-          </div>
-
           {/* Seed */}
-          <div className="lg:col-span-2 bg-dark-800/40 border border-dark-650 rounded-xl p-5">
-            <label className="block text-[11px] font-semibold text-dark-400 uppercase tracking-[0.15em] mb-3">
-              Seed Value
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={seed}
-                onChange={e => setSeed(parseInt(e.target.value) || 1)}
-                className="flex-1 min-w-0 rounded-lg border border-dark-600 bg-dark-750 px-3 py-2.5 text-[13px] font-[JetBrains_Mono,monospace] text-dark-100 focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/30 outline-none transition-all"
-              />
-              <button
-                onClick={randomizeSeed}
-                className="px-3 py-2.5 rounded-lg bg-dark-750 border border-dark-600 hover:bg-dark-700 hover:border-dark-500 text-lg transition-all"
-                title="Randomize seed"
-              >
-                🎲
-              </button>
-            </div>
-            <p className="mt-2.5 text-[10px] text-dark-500 leading-relaxed">
-              Same seed = same data. Use for reproducible testing.
-            </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#64748b' }}>Seed:</span>
+            <input type="number" value={seed} onChange={e => setSeed(+e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 8, border: '1px solid #1e293b', background: '#111318', color: '#e2e8f0', fontSize: 13, outline: 'none' }} />
+            <button onClick={() => setSeed(Math.floor(Math.random() * 99999))} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #1e293b', background: '#111318', color: '#94a3b8', fontSize: 12, cursor: 'pointer' }}>🎲</button>
           </div>
-
-          {/* Export */}
-          <div className="lg:col-span-4 bg-dark-800/40 border border-dark-650 rounded-xl p-5">
-            <label className="block text-[11px] font-semibold text-dark-400 uppercase tracking-[0.15em] mb-3">Export Format</label>
-            <div className="flex gap-1 bg-dark-850 border border-dark-700 rounded-lg p-1 mb-4">
-              {EXPORT_FORMATS.map(f => (
-                <button
-                  key={f.value}
-                  onClick={() => setExportFormat(f.value)}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-md text-[12px] font-semibold transition-all duration-200',
-                    exportFormat === f.value
-                      ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-400 ring-1 ring-cyan-500/30 shadow-sm'
-                      : 'text-dark-400 hover:text-dark-200 hover:bg-dark-750',
-                    f.value === 'fhir' && !isHealthcareType ? 'opacity-40' : ''
-                  )}
-                >
-                  <span className="text-[11px]">{f.icon}</span>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleDownload}
-                disabled={downloadStatus === 'downloading'}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-[13px] transition-all duration-300 active:scale-[0.98]',
-                  downloadStatus === 'success'
-                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/20'
-                    : downloadStatus === 'fallback'
-                    ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/20'
-                    : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:from-cyan-400 hover:to-blue-500'
-                )}
-              >
-                {downloadStatus === 'downloading' ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Preparing...
-                  </>
-                ) : downloadStatus === 'success' ? (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    Downloaded!
-                  </>
-                ) : downloadStatus === 'fallback' ? (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Opened in new tab
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Download
-                    <span className="text-[10px] opacity-70 font-[JetBrains_Mono,monospace]">({exportSize})</span>
-                  </>
-                )}
+          {/* Format */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['json', 'csv', 'sql', 'fhir'] as const).map(f => (
+              <button key={f} onClick={() => setFormat(f)}
+                style={{ padding: '6px 12px', borderRadius: 8, border: format === f ? '1px solid #3b82f6' : '1px solid #1e293b', background: format === f ? '#3b82f620' : '#111318', color: format === f ? '#3b82f6' : '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase' }}>
+                {f}
               </button>
-              <button
-                onClick={() => setShowExport(!showExport)}
-                className={cn(
-                  'px-3.5 py-2.5 rounded-lg border text-[13px] font-bold font-[JetBrains_Mono,monospace] transition-all duration-200',
-                  showExport
-                    ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30 ring-1 ring-cyan-500/20'
-                    : 'bg-dark-750 text-dark-300 border-dark-600 hover:border-dark-500 hover:text-dark-200'
-                )}
-                title="Preview export"
-              >
-                {'</>'}
-              </button>
-            </div>
+            ))}
           </div>
+          {/* Search */}
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search data..." style={{ flex: 1, minWidth: 150, padding: '8px 14px', borderRadius: 8, border: '1px solid #1e293b', background: '#111318', color: '#e2e8f0', fontSize: 13, outline: 'none' }} />
+          {/* Download */}
+          <button onClick={handleDownload} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            ⬇ Download
+          </button>
         </div>
 
-        {/* HL7 FHIR note */}
-        {exportFormat === 'fhir' && (
-          <div className={cn(
-            'mb-6 rounded-xl border p-4 flex items-start gap-3 animate-float-in',
-            isHealthcareType
-              ? 'bg-teal-500/5 border-teal-500/20'
-              : 'bg-amber-500/5 border-amber-500/20'
-          )}>
-            <span className="text-xl mt-0.5">🔥</span>
-            <div>
-              <p className="text-sm font-semibold text-dark-100">HL7 FHIR Export</p>
-              <p className="text-[12px] text-dark-300 mt-1 leading-relaxed">
-                {isHealthcareType
-                  ? `Exports ${dataType === 'patients' ? 'Patient' : dataType === 'labResults' ? 'Observation' : 'resource'} FHIR Bundle. Best supported for Patients & Lab Results.`
-                  : 'FHIR format is designed for healthcare data types. Switch to a healthcare type for proper FHIR output.'
-                }
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Export Preview */}
-        {showExport && (
-          <div className="mb-7 rounded-xl border border-dark-650 bg-dark-900 overflow-hidden shadow-2xl shadow-black/30 animate-float-in">
-            <div className="flex items-center justify-between px-5 py-3 bg-dark-800/80 border-b border-dark-700/50">
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-green-500/80" />
-                </div>
-                <span className="text-[12px] text-dark-400 font-[JetBrains_Mono,monospace]">
-                  fake_{dataType}_{effectiveCount}.{exportFormat === 'fhir' ? 'json' : exportFormat}
-                </span>
-                <span className="text-[11px] text-dark-500 bg-dark-700 px-2 py-0.5 rounded-full font-[JetBrains_Mono,monospace]">
-                  {exportSize}
-                </span>
-              </div>
-              <button
-                onClick={handleCopy}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200 border',
-                  copied
-                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                    : 'bg-dark-700 text-dark-300 border-dark-600 hover:bg-dark-650 hover:text-dark-200'
-                )}
-              >
-                {copied ? (
-                  <>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    Copy
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="p-5 text-[13px] text-emerald-400/90 font-[JetBrains_Mono,monospace] overflow-auto max-h-80 leading-relaxed selection:bg-cyan-500/20">
-              {exportedData.slice(0, 8000)}{exportedData.length > 8000 ? '\n\n... (truncated — download for full data)' : ''}
-            </pre>
-          </div>
-        )}
-
-        {/* Custom Columns Bar */}
-        <div className="mb-5">
-          <div className={cn(
-            'rounded-xl border overflow-hidden transition-all duration-300',
-            customColumns.filter(c => c.enabled && c.name.trim()).length > 0
-              ? 'border-cyan-500/30 bg-gradient-to-r from-cyan-500/5 via-dark-800/40 to-blue-500/5'
-              : 'border-dark-650 bg-dark-800/40'
-          )}>
-            <div className="flex items-center justify-between px-5 py-4">
-              <div className="flex items-center gap-4">
-                <div className={cn(
-                  'h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all',
-                  customColumns.filter(c => c.enabled && c.name.trim()).length > 0
-                    ? 'bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/20'
-                    : 'bg-dark-750 border border-dark-600'
-                )}>
-                  <span className="text-lg">➕</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-white">Custom Columns</h3>
-                    {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold ring-1 ring-cyan-500/20 uppercase tracking-wider">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-glow" />
-                        {customColumns.filter(c => c.enabled && c.name.trim()).length} active
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-dark-500 bg-dark-750 px-2 py-0.5 rounded-full">Optional</span>
-                    )}
-                  </div>
-                  <p className="text-[12px] text-dark-400 mt-0.5">
-                    {customColumns.filter(c => c.enabled && c.name.trim()).length > 0
-                      ? 'Custom columns are added to every generated record'
-                      : 'Add your own columns with custom data types, formulas, and value pools'
-                    }
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 && (
-                  <button
-                    onClick={() => setCustomColumns([])}
-                    className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-[12px] font-medium border border-red-500/20 hover:bg-red-500/20 transition-all"
-                  >
-                    ✕ Clear
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowCustomColumns(true)}
-                  className={cn(
-                    'flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all active:scale-[0.98]',
-                    customColumns.filter(c => c.enabled && c.name.trim()).length > 0
-                      ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/30 hover:from-cyan-500/30 hover:to-blue-500/30'
-                      : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30'
-                  )}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 ? 'Edit Columns' : 'Add Custom Columns'}
-                </button>
-              </div>
-            </div>
-            {/* Show active custom column names */}
-            {customColumns.filter(c => c.enabled && c.name.trim()).length > 0 && (
-              <div className="px-5 pb-4 flex flex-wrap gap-2">
-                {customColumns.filter(c => c.enabled && c.name.trim()).map(col => (
-                  <span key={col.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-dark-750 text-dark-200 text-[11px] font-medium ring-1 ring-dark-600">
-                    <span>{col.type === 'text' ? '🔤' : col.type === 'number' ? '🔢' : col.type === 'boolean' ? '✅' : col.type === 'date' ? '📅' : col.type === 'select' ? '📋' : '🧮'}</span>
-                    <span className="font-[JetBrains_Mono,monospace] text-cyan-400/80">{col.name}</span>
-                    <span className="text-dark-500">({col.type})</span>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="mb-5 flex items-center gap-4">
-          <div className="relative flex-1 max-w-lg">
-            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder={`Search ${DATA_TYPES.find(d => d.value === dataType)?.label.toLowerCase() ?? dataType}...`}
-              className="w-full rounded-xl border border-dark-600 bg-dark-800/60 pl-10 pr-10 py-3 text-[13px] text-dark-100 placeholder:text-dark-500 focus:ring-1 focus:ring-cyan-500/40 focus:border-cyan-500/30 outline-none transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-dark-500 hover:text-dark-300 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-          </div>
-          {searchQuery && (
-            <span className="text-[11px] text-dark-400 bg-dark-800 border border-dark-650 px-3 py-2 rounded-lg whitespace-nowrap font-[JetBrains_Mono,monospace]">
-              {filteredData.length.toLocaleString()} <span className="text-dark-500">matches</span>
-            </span>
-          )}
-          {filteredData.length > displayedCount && (
-            <span className="text-[11px] text-dark-400 bg-dark-800 border border-dark-650 px-3 py-2 rounded-lg whitespace-nowrap font-[JetBrains_Mono,monospace]">
-              {displayedCount.toLocaleString()} <span className="text-dark-500">of</span> {filteredData.length.toLocaleString()}
-            </span>
-          )}
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <span style={{ padding: '4px 12px', borderRadius: 8, background: '#1e293b', color: '#94a3b8', fontSize: 12 }}>📊 {data.length.toLocaleString()} records</span>
+          <span style={{ padding: '4px 12px', borderRadius: 8, background: '#1e293b', color: '#94a3b8', fontSize: 12 }}>📋 {columns.length} fields</span>
+          <span style={{ padding: '4px 12px', borderRadius: 8, background: '#1e293b', color: '#94a3b8', fontSize: 12 }}>🌱 Seed: {seed}</span>
+          <span style={{ padding: '4px 12px', borderRadius: 8, background: '#1e293b', color: '#94a3b8', fontSize: 12 }}>📁 {format.toUpperCase()}</span>
+          {activeScenario && <span style={{ padding: '4px 12px', borderRadius: 8, background: '#a855f720', color: '#a855f7', fontSize: 12, border: '1px solid #a855f740' }}>🎬 {customScenarios.find(s => s.id === activeScenario)?.name}</span>}
         </div>
 
         {/* Data Table */}
-        <div className="rounded-xl border border-dark-650 bg-dark-900/50 shadow-2xl shadow-black/20 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <div style={{ borderRadius: 12, border: '1px solid #1e293b', overflow: 'hidden', marginBottom: 20 }}>
+          <div style={{ overflowX: 'auto', maxHeight: 500 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
-                <tr className="border-b border-dark-700/50 bg-dark-800/60">
-                  <th className="px-4 py-3.5 text-left text-[10px] font-bold text-dark-400 uppercase tracking-[0.15em] w-14">
-                    #
-                  </th>
+                <tr style={{ background: '#111318', position: 'sticky', top: 0, zIndex: 10 }}>
                   {columns.map(col => (
-                    <th
-                      key={col.key}
-                      className="px-4 py-3.5 text-left text-[10px] font-bold text-dark-400 uppercase tracking-[0.15em] whitespace-nowrap"
-                    >
-                      {col.label}
-                    </th>
+                    <th key={col} style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #1e293b', whiteSpace: 'nowrap' }}>{col}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-dark-750/50">
-                {filteredData.length === 0 ? (
-                  <tr>
-                    <td colSpan={columns.length + 1} className="px-4 py-16 text-center">
-                      <div className="text-4xl mb-3 opacity-50">🔍</div>
-                      <div className="font-semibold text-dark-200 text-sm">No results found</div>
-                      <div className="text-[12px] mt-1.5 text-dark-500">Try adjusting your search query</div>
-                    </td>
+              <tbody>
+                {filtered.slice(0, 300).map((row, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #1e293b15' }} onMouseEnter={e => (e.currentTarget.style.background = '#1e293b30')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    {columns.map(col => (
+                      <td key={col} style={{ padding: '8px 14px', whiteSpace: 'nowrap', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', color: row[col] === null ? '#475569' : row[col] === true ? '#22c55e' : row[col] === false ? '#ef4444' : '#cbd5e1' }}>
+                        {row[col] === null ? 'null' : row[col] === true ? '✓ true' : row[col] === false ? '✗ false' : String(row[col] ?? '')}
+                      </td>
+                    ))}
                   </tr>
-                ) : (
-                  filteredData.slice(0, displayedCount).map((row, i) => (
-                    <tr
-                      key={`${(row as unknown as Record<string, string>).id}-${i}`}
-                      className="table-row-hover"
-                    >
-                      <td className="px-4 py-3 text-[11px] text-dark-500 font-[JetBrains_Mono,monospace]">{i + 1}</td>
-                      {columns.map(col => (
-                        <td key={col.key} className="px-4 py-3 whitespace-nowrap max-w-[240px] truncate">
-                          {getCellDisplay(row, col.key)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-          {filteredData.length > displayedCount && (
-            <div className="px-5 py-3.5 bg-dark-800/40 border-t border-dark-700/50 text-center text-[12px] text-dark-400">
-              Showing first <span className="text-dark-200 font-medium">{displayedCount.toLocaleString()}</span> of{' '}
-              <span className="text-dark-200 font-medium">{filteredData.length.toLocaleString()}</span> records.
-              <button onClick={handleDownload} className="text-cyan-400 hover:text-cyan-300 ml-1.5 font-medium transition-colors">
-                Download full dataset →
-              </button>
+          {filtered.length > 300 && (
+            <div style={{ padding: '10px', textAlign: 'center', background: '#111318', color: '#64748b', fontSize: 12 }}>
+              Showing 300 of {filtered.length.toLocaleString()} records. Download for full dataset.
             </div>
           )}
         </div>
 
-        {/* Stats Grid */}
-        <div className="mt-7 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-          <StatCard icon="📊" label="Records" value={data.length.toLocaleString()} glow="cyan" />
-          <StatCard icon="📋" label="Fields" value={columns.length.toString()} glow="blue" />
-          <StatCard icon="🌱" label="Seed" value={seed.toString()} glow="purple" />
-          <StatCard icon="📦" label="Export" value={exportSize} glow="emerald" />
-          <StatCard icon="⚡" label="Gen Time" value={generationTime < 1 ? '<1ms' : `${Math.round(generationTime)}ms`} glow="amber" />
-          <StatCard icon="🔤" label="Format" value={exportFormat.toUpperCase()} glow="pink" />
-          <StatCard
-            icon="🎬"
-            label="Scenario"
-            value={activeScenario ? (activePreset?.name?.split(' ')[0] ?? 'Custom') : 'None'}
-            glow={activeScenario ? 'purple' : 'cyan'}
-          />
-        </div>
-
-        {/* Healthcare disclaimer */}
-        {isHealthcareType && (
-          <div className="mt-7 rounded-xl border border-teal-500/15 bg-teal-500/5 p-5 flex items-start gap-4 animate-float-in">
-            <div className="w-10 h-10 rounded-lg bg-teal-500/10 flex items-center justify-center flex-shrink-0">
-              <span className="text-xl">🔒</span>
+        {/* Code Preview */}
+        <div style={{ marginBottom: 20 }}>
+          <button onClick={() => setShowCode(!showCode)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #1e293b', background: '#111318', color: '#94a3b8', fontSize: 13, cursor: 'pointer', marginBottom: 10 }}>
+            {showCode ? '▼ Hide' : '▶ Show'} Code Preview
+          </button>
+          {showCode && (
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => navigator.clipboard.writeText(exportStr)} style={{ position: 'absolute', top: 10, right: 10, padding: '4px 10px', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontSize: 11, cursor: 'pointer', zIndex: 5 }}>Copy</button>
+              <pre style={{ background: '#0a0b0f', border: '1px solid #1e293b', borderRadius: 10, padding: 16, fontSize: 12, color: '#94a3b8', overflow: 'auto', maxHeight: 400, margin: 0 }}>{exportStr.slice(0, 5000)}{exportStr.length > 5000 ? '\n\n... truncated ...' : ''}</pre>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-teal-400">Synthetic Data — HIPAA Safe</p>
-              <p className="text-[12px] text-dark-300 mt-1.5 leading-relaxed">
-                All healthcare data is <strong className="text-dark-200">100% synthetically generated</strong> for testing purposes only.
-                No real patient information (PHI/PII) is used. Suitable for development, testing,
-                HIPAA-compliant training environments, and demo applications. All identifiers are fictional.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-[11px] text-dark-500 pb-8 space-y-1.5">
-          <p>All data is randomly generated and does not represent real individuals or medical records.</p>
-          <p className="text-dark-600">Same seed value always produces identical data for reproducible testing.</p>
+          )}
         </div>
-      </div>
+      </main>
 
-      {/* Scenario Builder Modal */}
-      {showScenarioBuilder && (
-        <ScenarioBuilder
-          dataType={dataType}
-          activeScenario={activeScenario}
-          onApplyScenario={handleApplyScenario}
-          onClose={() => setShowScenarioBuilder(false)}
-        />
-      )}
+      {/* ═══════ CUSTOM DATA TYPE MODAL ═══════ */}
+      {showCustomType && (
+        <div style={{ position: 'fixed', inset: 0, background: '#000000cc', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => { if (e.target === e.currentTarget) setShowCustomType(false); }}>
+          <div style={{ background: '#111318', borderRadius: 16, border: '1px solid #1e293b', width: '100%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto', padding: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#e2e8f0' }}>🔧 Create Custom Data Type</h2>
+              <button onClick={() => setShowCustomType(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 24, cursor: 'pointer' }}>✕</button>
+            </div>
 
-      {/* Custom Columns Modal */}
-      {showCustomColumns && (
-        <CustomColumnsModal
-          columns={customColumns}
-          onChange={setCustomColumns}
-          onClose={() => setShowCustomColumns(false)}
-        />
-      )}
+            {/* Name & Icon */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Type Name *</label>
+                <input value={ctName} onChange={e => setCtName(e.target.value)} placeholder="e.g., Vehicles, Recipes, Invoices" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0a0b0f', color: '#fff', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ width: 80 }}>
+                <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Icon</label>
+                <input value={ctIcon} onChange={e => setCtIcon(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0a0b0f', color: '#fff', fontSize: 14, outline: 'none', textAlign: 'center', boxSizing: 'border-box' }} />
+              </div>
+            </div>
 
-      {/* Download Toast Notification */}
-      {downloadStatus !== 'idle' && downloadStatus !== 'downloading' && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-float-in">
-          <div className={cn(
-            'flex items-center gap-3 px-5 py-3.5 rounded-xl border shadow-2xl backdrop-blur-xl',
-            downloadStatus === 'success'
-              ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-300 shadow-emerald-500/20'
-              : 'bg-amber-950/90 border-amber-500/30 text-amber-300 shadow-amber-500/20'
-          )}>
-            {downloadStatus === 'success' ? (
-              <>
-                <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <div>
-                  <div className="text-sm font-semibold">Download started</div>
-                  <div className="text-[11px] opacity-70 font-[JetBrains_Mono,monospace]">
-                    fake_{dataType}_{effectiveCount}.{exportFormat === 'json' || exportFormat === 'fhir' ? 'json' : exportFormat}
+            {/* Fields */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <label style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>Fields ({ctFields.length})</label>
+                <button onClick={addField} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #06b6d4', background: '#06b6d420', color: '#06b6d4', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Add Field</button>
+              </div>
+
+              {ctFields.length === 0 && (
+                <div style={{ padding: 30, textAlign: 'center', border: '2px dashed #1e293b', borderRadius: 12, color: '#475569' }}>
+                  <p style={{ fontSize: 14, margin: 0 }}>No fields yet. Click "Add Field" to start building your data type.</p>
+                </div>
+              )}
+
+              {ctFields.map((f) => (
+                <div key={f.id} style={{ padding: 16, background: '#0a0b0f', borderRadius: 10, border: '1px solid #1e293b', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                    <input value={f.name} onChange={e => updateField(f.id, { name: e.target.value })} placeholder="Field name" style={{ flex: 1, minWidth: 120, padding: '8px 12px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 13, outline: 'none' }} />
+                    <select value={f.type} onChange={e => updateField(f.id, { type: e.target.value as any })} style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 13, outline: 'none' }}>
+                      <option value="text">Text</option>
+                      <option value="number">Number</option>
+                      <option value="boolean">Boolean</option>
+                      <option value="date">Date</option>
+                      <option value="select">Select from List</option>
+                    </select>
+                    <button onClick={() => removeField(f.id)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #dc2626', background: '#dc262620', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                  </div>
+
+                  {/* Type-specific options */}
+                  {f.type === 'number' && (
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#64748b' }}>Min</label>
+                        <input type="number" value={f.min ?? 0} onChange={e => updateField(f.id, { min: +e.target.value })} style={{ width: 80, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#64748b' }}>Max</label>
+                        <input type="number" value={f.max ?? 1000} onChange={e => updateField(f.id, { max: +e.target.value })} style={{ width: 80, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#64748b' }}>Prefix</label>
+                        <input value={f.prefix ?? ''} onChange={e => updateField(f.id, { prefix: e.target.value })} placeholder="$" style={{ width: 50, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#64748b' }}>Suffix</label>
+                        <input value={f.suffix ?? ''} onChange={e => updateField(f.id, { suffix: e.target.value })} placeholder="kg" style={{ width: 50, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {(f.type === 'text' || f.type === 'select') && (
+                    <div>
+                      <label style={{ fontSize: 11, color: '#64748b' }}>Values (comma separated)</label>
+                      <input value={(f.options ?? []).join(', ')} onChange={e => updateField(f.id, { options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} placeholder="e.g., Red, Blue, Green" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', marginTop: 4, boxSizing: 'border-box' }} />
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 8 }}>
+                    <label style={{ fontSize: 11, color: '#64748b' }}>Null % (0-100)</label>
+                    <input type="number" value={f.nullPct ?? 0} onChange={e => updateField(f.id, { nullPct: +e.target.value })} min={0} max={100} style={{ width: 60, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
                   </div>
                 </div>
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <div className="text-sm font-semibold">Opened in new tab</div>
-                  <div className="text-[11px] opacity-70">Use Ctrl+S / Cmd+S to save the file</div>
-                </div>
-              </>
-            )}
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={saveCustomType} disabled={!ctName.trim() || ctFields.length === 0} style={{ flex: 1, padding: '12px', borderRadius: 8, border: 'none', background: ctName.trim() && ctFields.length > 0 ? 'linear-gradient(135deg, #06b6d4, #3b82f6)' : '#1e293b', color: ctName.trim() && ctFields.length > 0 ? '#fff' : '#475569', fontSize: 15, fontWeight: 700, cursor: ctName.trim() && ctFields.length > 0 ? 'pointer' : 'default' }}>
+                Create Data Type
+              </button>
+              <button onClick={() => setShowCustomType(false)} style={{ padding: '12px 24px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Auth Modal (for cases where we need to show it again) */}
-      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+      {/* ═══════ CUSTOM SCENARIO MODAL ═══════ */}
+      {showCustomScenario && (
+        <div style={{ position: 'fixed', inset: 0, background: '#000000cc', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => { if (e.target === e.currentTarget) setShowCustomScenario(false); }}>
+          <div style={{ background: '#111318', borderRadius: 16, border: '1px solid #1e293b', width: '100%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto', padding: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#e2e8f0' }}>🎬 Create Custom Scenario</h2>
+              <button onClick={() => setShowCustomScenario(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 24, cursor: 'pointer' }}>✕</button>
+            </div>
 
-      {/* Usage Stats Modal */}
-      <UsageStats isOpen={showUsageStats} onClose={() => setShowUsageStats(false)} />
+            <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>Define rules to shape your generated data. For example: force all ages to 65+, set 20% of emails to null, or limit status to specific values.</p>
+
+            {/* Scenario Name */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Scenario Name *</label>
+              <input value={csName} onChange={e => setCsName(e.target.value)} placeholder="e.g., Elderly Patients, High-Value Orders" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0a0b0f', color: '#fff', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+
+            {/* Target Data Type */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Apply to Data Type</label>
+              <select value={csDataType} onChange={e => setCsDataType(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0a0b0f', color: '#fff', fontSize: 14, outline: 'none' }}>
+                {allTypes.map(t => <option key={t.id} value={t.id}>{t.icon} {t.name}</option>)}
+              </select>
+            </div>
+
+            {/* Rules */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <label style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>Rules ({csRules.length})</label>
+                <button onClick={addRule} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #a855f7', background: '#a855f720', color: '#a855f7', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Add Rule</button>
+              </div>
+
+              {csRules.length === 0 && (
+                <div style={{ padding: 30, textAlign: 'center', border: '2px dashed #1e293b', borderRadius: 12, color: '#475569' }}>
+                  <p style={{ fontSize: 14, margin: 0 }}>No rules yet. Click "Add Rule" to define how data should be shaped.</p>
+                </div>
+              )}
+
+              {csRules.map((r, ri) => (
+                <div key={ri} style={{ padding: 16, background: '#0a0b0f', borderRadius: 10, border: '1px solid #1e293b', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                    {/* Field selector */}
+                    <select value={r.field} onChange={e => updateRule(ri, { field: e.target.value })} style={{ flex: 1, minWidth: 120, padding: '8px 12px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 13, outline: 'none' }}>
+                      <option value="">Select field...</option>
+                      {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                    {/* Action */}
+                    <select value={r.action} onChange={e => updateRule(ri, { action: e.target.value as any })} style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 13, outline: 'none' }}>
+                      <option value="fixed">Set Fixed Value</option>
+                      <option value="range">Number Range</option>
+                      <option value="null">Inject Nulls</option>
+                      <option value="oneOf">One of Values</option>
+                    </select>
+                    <button onClick={() => removeRule(ri)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #dc2626', background: '#dc262620', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                  </div>
+
+                  {/* Action-specific inputs */}
+                  {r.action === 'fixed' && (
+                    <input value={r.value ?? ''} onChange={e => updateRule(ri, { value: e.target.value })} placeholder="Fixed value for all rows" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                  )}
+                  {r.action === 'range' && (
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#64748b' }}>Min</label>
+                        <input type="number" value={r.min ?? 0} onChange={e => updateRule(ri, { min: +e.target.value })} style={{ width: 100, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#64748b' }}>Max</label>
+                        <input type="number" value={r.max ?? 100} onChange={e => updateRule(ri, { max: +e.target.value })} style={{ width: 100, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
+                      </div>
+                    </div>
+                  )}
+                  {r.action === 'null' && (
+                    <div>
+                      <label style={{ fontSize: 11, color: '#64748b' }}>Null percentage (0-100)</label>
+                      <input type="number" value={r.pct ?? 50} onChange={e => updateRule(ri, { pct: +e.target.value })} min={0} max={100} style={{ width: 80, padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', display: 'block', marginTop: 4 }} />
+                    </div>
+                  )}
+                  {r.action === 'oneOf' && (
+                    <div>
+                      <label style={{ fontSize: 11, color: '#64748b' }}>Values (comma separated)</label>
+                      <input value={(r.values ?? []).join(', ')} onChange={e => updateRule(ri, { values: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} placeholder="e.g., Active, Pending, Closed" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #334155', background: '#111318', color: '#fff', fontSize: 12, outline: 'none', marginTop: 4, boxSizing: 'border-box' }} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Preset Scenario Templates */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 10, display: 'block' }}>Quick Templates</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { label: '🧓 Elderly (65+)', dt: 'patients', rules: [{ field: 'age', action: 'range' as const, min: 65, max: 95 }] },
+                  { label: '👶 Pediatric (0-17)', dt: 'patients', rules: [{ field: 'age', action: 'range' as const, min: 0, max: 17 }] },
+                  { label: '💰 High Value ($5K+)', dt: 'transactions', rules: [{ field: 'amount', action: 'range' as const, min: 5000, max: 50000 }] },
+                  { label: '❌ Denied Claims', dt: 'insuranceClaims', rules: [{ field: 'status', action: 'fixed' as const, value: 'Denied' }] },
+                  { label: '🗑️ Dirty Data (30% nulls)', dt: 'users', rules: [{ field: 'email', action: 'null' as const, pct: 30 }, { field: 'phone', action: 'null' as const, pct: 30 }] },
+                  { label: '⭐ 5-Star Reviews', dt: 'reviews', rules: [{ field: 'rating', action: 'fixed' as const, value: '5' }] },
+                  { label: '🚨 Critical Alerts', dt: 'alerts', rules: [{ field: 'severity', action: 'fixed' as const, value: 'Critical' }] },
+                  { label: '🏠 Remote Workers', dt: 'employees', rules: [{ field: 'remote', action: 'fixed' as const, value: 'Remote' }] },
+                ].map((tpl, ti) => (
+                  <button key={ti} onClick={() => { setCsName(tpl.label.replace(/^[^ ]+ /, '')); setCsDataType(tpl.dt); setCsRules(tpl.rules); }}
+                    style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontSize: 12, cursor: 'pointer' }}>
+                    {tpl.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={saveScenario} disabled={!csName.trim() || csRules.length === 0} style={{ flex: 1, padding: '12px', borderRadius: 8, border: 'none', background: csName.trim() && csRules.length > 0 ? 'linear-gradient(135deg, #a855f7, #ec4899)' : '#1e293b', color: csName.trim() && csRules.length > 0 ? '#fff' : '#475569', fontSize: 15, fontWeight: 700, cursor: csName.trim() && csRules.length > 0 ? 'pointer' : 'default' }}>
+                Save Scenario
+              </button>
+              <button onClick={() => setShowCustomScenario(false)} style={{ padding: '12px 24px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-
-function StatCard({ icon, label, value, glow }: { icon: string; label: string; value: string; glow: string }) {
-  const glowColors: Record<string, { border: string; shadow: string; text: string }> = {
-    cyan: { border: 'border-cyan-500/10', shadow: 'shadow-cyan-500/5', text: 'text-cyan-400' },
-    blue: { border: 'border-blue-500/10', shadow: 'shadow-blue-500/5', text: 'text-blue-400' },
-    purple: { border: 'border-purple-500/10', shadow: 'shadow-purple-500/5', text: 'text-purple-400' },
-    emerald: { border: 'border-emerald-500/10', shadow: 'shadow-emerald-500/5', text: 'text-emerald-400' },
-    amber: { border: 'border-amber-500/10', shadow: 'shadow-amber-500/5', text: 'text-amber-400' },
-    pink: { border: 'border-pink-500/10', shadow: 'shadow-pink-500/5', text: 'text-pink-400' },
-  };
-  const cfg = glowColors[glow] ?? glowColors.cyan;
-
-  return (
-    <div className={cn(
-      'rounded-xl border bg-dark-800/40 p-4 shadow-lg transition-all duration-300 hover:bg-dark-800/60',
-      cfg.border, cfg.shadow
-    )}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-lg">{icon}</span>
-        <span className="text-[10px] font-bold text-dark-400 uppercase tracking-[0.15em]">{label}</span>
-      </div>
-      <div className={cn('text-lg font-bold font-[JetBrains_Mono,monospace] truncate', cfg.text)}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
