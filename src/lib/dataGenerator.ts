@@ -13,20 +13,21 @@ export type FieldType =
   | 'username'   | 'password'
   | 'productName'| 'price'     | 'category'   | 'sku'        | 'rating'
   | 'status'     | 'priority'  | 'tag'
-  // Healthcare
+  // Healthcare — Core
   | 'medicalRecordNo' | 'diagnosis' | 'icdCode' | 'medication' | 'dosage'
   | 'bloodType' | 'allergen' | 'procedure' | 'insuranceProvider'
   | 'hospitalWard' | 'doctorName' | 'vitalBP' | 'vitalHR' | 'vitalTemp'
   | 'labTest' | 'labResult' | 'patientAge' | 'gender' | 'admissionType'
   | 'dischargeStatus'
+  // Healthcare — Extended
+  | 'vitalSpO2' | 'vitalRR' | 'bmi' | 'painScale' | 'roomNumber'
+  | 'nursingNote' | 'emergencyContact' | 'copayAmount'
+  // Custom
   | 'custom_list'| 'custom_regex' | 'custom_template';
 
 export interface CustomFieldConfig {
-  /** For custom_list: comma-separated values to pick from */
   listValues?: string;
-  /** For custom_regex: simple pattern tokens like [A-Z]{3}[0-9]{4} */
   regexPattern?: string;
-  /** For custom_template: template string, e.g. "USER-{{integer}}-{{city}}" */
   template?: string;
 }
 
@@ -39,12 +40,12 @@ export interface Field {
 
 export type ExportFormat = 'json' | 'csv' | 'sql' | 'xml';
 
-// ── Scenario definition ─────────────────────────────────────────────────────
 export interface Scenario {
   id: string;
   label: string;
   icon: string;
   description: string;
+  category?: 'general' | 'healthcare';
   fields: { name: string; type: FieldType; config?: CustomFieldConfig }[];
   rowCount?: number;
 }
@@ -153,6 +154,17 @@ const GENDERS = ['Male','Female','Non-Binary','Other','Prefer not to say'];
 const ADMISSION_TYPES = ['Emergency','Urgent','Elective','Newborn','Trauma','Observation','Transfer','Direct Admit'];
 const DISCHARGE_STATUSES = ['Discharged Home','Discharged to SNF','Discharged to Rehab','Against Medical Advice','Transferred','Expired','Still Admitted','Discharged to Hospice'];
 
+const NURSING_NOTES = [
+  'Patient resting comfortably, vitals stable.','Administered medications per order. No adverse reactions noted.',
+  'Patient ambulated in hallway with assist x1.','Wound dressing changed, site clean and dry.',
+  'Oxygen saturation maintained above 94% on room air.','Patient reports pain at 4/10, improved from 7/10.',
+  'IV fluids infusing at prescribed rate.','Patient educated on discharge medications.',
+  'Fall risk assessment completed, precautions in place.','Blood glucose monitored, within normal range.',
+  'Patient NPO for scheduled procedure.','Foley catheter draining clear amber urine.',
+  'Repositioned patient every 2 hours per protocol.','Patient reports nausea, anti-emetic administered.',
+  'Neuro checks within normal limits.','Respiratory therapy completed. Lungs clear bilaterally.',
+];
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 const rand  = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -177,7 +189,6 @@ function slugify(str: string) {
   return str.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
-/** Expand a custom_template string — replaces {{type}} tokens */
 function expandTemplate(template: string): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, token) => {
     const v = generateValue(token as FieldType, undefined);
@@ -185,7 +196,6 @@ function expandTemplate(template: string): string {
   });
 }
 
-/** Very simple pattern interpreter: [A-Z]{n} [0-9]{n} [a-z]{n} literal */
 function expandPattern(pattern: string): string {
   return pattern.replace(/\[([^\]]+)\]\{(\d+)\}|([^[]+)/g, (_match, charset, count, literal) => {
     if (literal !== undefined) return literal;
@@ -262,7 +272,7 @@ export function generateValue(type: FieldType, config?: CustomFieldConfig): unkn
     case 'priority':     return pick(PRIORITIES);
     case 'tag':          return pick(TAGS);
 
-    // ── Healthcare field types ───────────────────────────────────────────
+    // ── Healthcare — Core ────────────────────────────────────────────────
     case 'medicalRecordNo': return `MRN-${rand(100000, 999999)}`;
     case 'diagnosis':       return pick(DIAGNOSES);
     case 'icdCode':         return pick(ICD_CODES);
@@ -283,6 +293,16 @@ export function generateValue(type: FieldType, config?: CustomFieldConfig): unkn
     case 'gender':          return pick(GENDERS);
     case 'admissionType':   return pick(ADMISSION_TYPES);
     case 'dischargeStatus': return pick(DISCHARGE_STATUSES);
+
+    // ── Healthcare — Extended ────────────────────────────────────────────
+    case 'vitalSpO2':       return `${rand(88, 100)}%`;
+    case 'vitalRR':         return `${rand(10, 30)} breaths/min`;
+    case 'bmi':             return parseFloat((Math.random() * 25 + 15).toFixed(1));
+    case 'painScale':       return `${rand(0, 10)}/10`;
+    case 'roomNumber':      return `${pick(['A','B','C','D','E'])}${rand(100, 999)}`;
+    case 'nursingNote':     return pick(NURSING_NOTES);
+    case 'emergencyContact': return `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)} — ${pick(['Spouse','Parent','Sibling','Child','Friend','Guardian'])} — +1 (${rand(200,999)}) ${rand(100,999)}-${rand(1000,9999)}`;
+    case 'copayAmount':     return `$${pick([0, 10, 15, 20, 25, 30, 35, 40, 50, 75, 100, 150, 200])}.00`;
 
     // ── Custom field types ───────────────────────────────────────────────
     case 'custom_list': {
@@ -348,236 +368,210 @@ export function exportData(rows: Record<string, unknown>[], format: ExportFormat
 
 // ── Built-in Scenarios ─────────────────────────────────────────────────────
 export const SCENARIOS: Scenario[] = [
+  // ─── General Scenarios ───────────────────────────────────────────────
   {
-    id: 'user-profiles',
-    label: 'User Profiles',
-    icon: '👤',
-    description: 'Complete user profile dataset with auth fields',
-    rowCount: 50,
+    id: 'user-profiles', label: 'User Profiles', icon: '👤', category: 'general',
+    description: 'Complete user profile dataset with auth fields', rowCount: 50,
     fields: [
-      { name: 'id',         type: 'uuid'      },
-      { name: 'username',   type: 'username'  },
-      { name: 'full_name',  type: 'fullName'  },
-      { name: 'email',      type: 'email'     },
-      { name: 'phone',      type: 'phone'     },
-      { name: 'avatar_url', type: 'url'       },
-      { name: 'joined_at',  type: 'timestamp' },
-      { name: 'is_verified',type: 'boolean'   },
-      { name: 'status',     type: 'status'    },
+      { name: 'id', type: 'uuid' }, { name: 'username', type: 'username' },
+      { name: 'full_name', type: 'fullName' }, { name: 'email', type: 'email' },
+      { name: 'phone', type: 'phone' }, { name: 'avatar_url', type: 'url' },
+      { name: 'joined_at', type: 'timestamp' }, { name: 'is_verified', type: 'boolean' },
+      { name: 'status', type: 'status' },
     ],
   },
   {
-    id: 'ecommerce',
-    label: 'E-commerce Products',
-    icon: '🛒',
-    description: 'Product catalog with pricing and inventory',
-    rowCount: 100,
+    id: 'ecommerce', label: 'E-commerce Products', icon: '🛒', category: 'general',
+    description: 'Product catalog with pricing and inventory', rowCount: 100,
     fields: [
-      { name: 'product_id', type: 'uuid'        },
-      { name: 'name',       type: 'productName' },
-      { name: 'sku',        type: 'sku'         },
-      { name: 'category',   type: 'category'    },
-      { name: 'price',      type: 'price'       },
-      { name: 'stock',      type: 'integer'     },
-      { name: 'rating',     type: 'rating'      },
-      { name: 'tag',        type: 'tag'         },
-      { name: 'created_at', type: 'timestamp'   },
+      { name: 'product_id', type: 'uuid' }, { name: 'name', type: 'productName' },
+      { name: 'sku', type: 'sku' }, { name: 'category', type: 'category' },
+      { name: 'price', type: 'price' }, { name: 'stock', type: 'integer' },
+      { name: 'rating', type: 'rating' }, { name: 'tag', type: 'tag' },
+      { name: 'created_at', type: 'timestamp' },
     ],
   },
   {
-    id: 'analytics',
-    label: 'Web Analytics',
-    icon: '📊',
-    description: 'Page view events with user tracking data',
-    rowCount: 200,
+    id: 'analytics', label: 'Web Analytics', icon: '📊', category: 'general',
+    description: 'Page view events with user tracking data', rowCount: 200,
     fields: [
-      { name: 'event_id',   type: 'uuid'      },
-      { name: 'session_id', type: 'uuid'      },
-      { name: 'user_email', type: 'email'     },
-      { name: 'ip_address', type: 'ipAddress' },
-      { name: 'page_url',   type: 'url'       },
+      { name: 'event_id', type: 'uuid' }, { name: 'session_id', type: 'uuid' },
+      { name: 'user_email', type: 'email' }, { name: 'ip_address', type: 'ipAddress' },
+      { name: 'page_url', type: 'url' }, { name: 'user_agent', type: 'userAgent' },
+      { name: 'duration_s', type: 'integer' }, { name: 'timestamp', type: 'timestamp' },
+      { name: 'country', type: 'country' },
+    ],
+  },
+  {
+    id: 'employees', label: 'HR / Employees', icon: '👔', category: 'general',
+    description: 'Employee directory with department and salary', rowCount: 75,
+    fields: [
+      { name: 'emp_id', type: 'uuid' }, { name: 'full_name', type: 'fullName' },
+      { name: 'email', type: 'email' }, { name: 'job_title', type: 'jobTitle' },
+      { name: 'department', type: 'department' }, { name: 'company', type: 'company' },
+      { name: 'salary', type: 'currency' }, { name: 'start_date', type: 'date' },
+      { name: 'city', type: 'city' }, { name: 'is_remote', type: 'boolean' },
+    ],
+  },
+  {
+    id: 'transactions', label: 'Transactions', icon: '💳', category: 'general',
+    description: 'Financial transaction ledger with statuses', rowCount: 150,
+    fields: [
+      { name: 'txn_id', type: 'uuid' }, { name: 'user_email', type: 'email' },
+      { name: 'card', type: 'creditCard' }, { name: 'amount', type: 'currency' },
+      { name: 'merchant', type: 'company' }, { name: 'category', type: 'category' },
+      { name: 'status', type: 'status' }, { name: 'timestamp', type: 'timestamp' },
+      { name: 'country', type: 'country' },
+    ],
+  },
+  {
+    id: 'crm', label: 'CRM Leads', icon: '🤝', category: 'general',
+    description: 'Sales CRM dataset with leads and pipeline', rowCount: 80,
+    fields: [
+      { name: 'lead_id', type: 'uuid' }, { name: 'name', type: 'fullName' },
+      { name: 'email', type: 'email' }, { name: 'company', type: 'company' },
+      { name: 'industry', type: 'industry' }, { name: 'priority', type: 'priority' },
+      { name: 'status', type: 'status' }, { name: 'deal_value', type: 'currency' },
+      { name: 'city', type: 'city' }, { name: 'created_at', type: 'date' },
+    ],
+  },
+  {
+    id: 'logs', label: 'Server Logs', icon: '🖥️', category: 'general',
+    description: 'Application logs with severity and metadata', rowCount: 500,
+    fields: [
+      { name: 'log_id', type: 'uuid' }, { name: 'timestamp', type: 'timestamp' },
+      { name: 'ip', type: 'ipAddress' },
+      { name: 'level', type: 'custom_list', config: { listValues: 'INFO,DEBUG,WARN,ERROR,FATAL' } },
+      { name: 'service', type: 'custom_list', config: { listValues: 'auth,api,worker,scheduler,gateway,cache' } },
+      { name: 'message', type: 'sentence' }, { name: 'duration_ms', type: 'integer' },
       { name: 'user_agent', type: 'userAgent' },
-      { name: 'duration_s', type: 'integer'   },
-      { name: 'timestamp',  type: 'timestamp' },
-      { name: 'country',    type: 'country'   },
     ],
   },
   {
-    id: 'employees',
-    label: 'HR / Employees',
-    icon: '👔',
-    description: 'Employee directory with department and salary',
-    rowCount: 75,
+    id: 'iot', label: 'IoT Sensor Data', icon: '🌡️', category: 'general',
+    description: 'Sensor readings from connected devices', rowCount: 300,
     fields: [
-      { name: 'emp_id',     type: 'uuid'       },
-      { name: 'full_name',  type: 'fullName'   },
-      { name: 'email',      type: 'email'      },
-      { name: 'job_title',  type: 'jobTitle'   },
-      { name: 'department', type: 'department' },
-      { name: 'company',    type: 'company'    },
-      { name: 'salary',     type: 'currency'   },
-      { name: 'start_date', type: 'date'       },
-      { name: 'city',       type: 'city'       },
-      { name: 'is_remote',  type: 'boolean'    },
+      { name: 'sensor_id', type: 'custom_regex', config: { regexPattern: 'SENSOR-[A-Z]{2}[0-9]{4}' } },
+      { name: 'device_type', type: 'custom_list', config: { listValues: 'temperature,humidity,pressure,motion,co2,luminosity' } },
+      { name: 'location', type: 'city' }, { name: 'value', type: 'float' },
+      { name: 'unit', type: 'custom_list', config: { listValues: '°C,°F,%,hPa,ppm,lux' } },
+      { name: 'status', type: 'custom_list', config: { listValues: 'online,offline,maintenance,fault' } },
+      { name: 'timestamp', type: 'timestamp' }, { name: 'battery_pct', type: 'percentage' },
+    ],
+  },
+
+  // ─── Healthcare Scenarios ─────────────────────────────────────────────
+  {
+    id: 'healthcare-patients', label: 'Patient Records', icon: '🏥', category: 'healthcare',
+    description: 'Complete patient demographics, insurance & allergies', rowCount: 100,
+    fields: [
+      { name: 'mrn', type: 'medicalRecordNo' }, { name: 'patient_name', type: 'fullName' },
+      { name: 'age', type: 'patientAge' }, { name: 'gender', type: 'gender' },
+      { name: 'blood_type', type: 'bloodType' }, { name: 'bmi', type: 'bmi' },
+      { name: 'phone', type: 'phone' }, { name: 'address', type: 'address' },
+      { name: 'insurance', type: 'insuranceProvider' }, { name: 'copay', type: 'copayAmount' },
+      { name: 'allergies', type: 'allergen' }, { name: 'emergency_contact', type: 'emergencyContact' },
+      { name: 'primary_diagnosis', type: 'diagnosis' }, { name: 'registered_at', type: 'timestamp' },
     ],
   },
   {
-    id: 'transactions',
-    label: 'Transactions',
-    icon: '💳',
-    description: 'Financial transaction ledger with statuses',
-    rowCount: 150,
+    id: 'healthcare-encounters', label: 'Clinical Encounters', icon: '🩺', category: 'healthcare',
+    description: 'Hospital admissions with full vitals & treatments', rowCount: 150,
     fields: [
-      { name: 'txn_id',     type: 'uuid'      },
-      { name: 'user_email', type: 'email'     },
-      { name: 'card',       type: 'creditCard'},
-      { name: 'amount',     type: 'currency'  },
-      { name: 'merchant',   type: 'company'   },
-      { name: 'category',   type: 'category'  },
-      { name: 'status',     type: 'status'    },
-      { name: 'timestamp',  type: 'timestamp' },
-      { name: 'country',    type: 'country'   },
+      { name: 'encounter_id', type: 'uuid' }, { name: 'mrn', type: 'medicalRecordNo' },
+      { name: 'patient_name', type: 'fullName' }, { name: 'room', type: 'roomNumber' },
+      { name: 'admission_type', type: 'admissionType' }, { name: 'ward', type: 'hospitalWard' },
+      { name: 'attending_dr', type: 'doctorName' }, { name: 'diagnosis', type: 'diagnosis' },
+      { name: 'icd_code', type: 'icdCode' }, { name: 'blood_pressure', type: 'vitalBP' },
+      { name: 'heart_rate', type: 'vitalHR' }, { name: 'temperature', type: 'vitalTemp' },
+      { name: 'spo2', type: 'vitalSpO2' }, { name: 'resp_rate', type: 'vitalRR' },
+      { name: 'pain_score', type: 'painScale' }, { name: 'medication', type: 'medication' },
+      { name: 'dosage', type: 'dosage' }, { name: 'procedure', type: 'procedure' },
+      { name: 'admitted_at', type: 'timestamp' }, { name: 'discharge', type: 'dischargeStatus' },
     ],
   },
   {
-    id: 'crm',
-    label: 'CRM Leads',
-    icon: '🤝',
-    description: 'Sales CRM dataset with leads and pipeline',
-    rowCount: 80,
+    id: 'healthcare-lab', label: 'Lab Results', icon: '🧪', category: 'healthcare',
+    description: 'Laboratory test orders, results & diagnostics', rowCount: 200,
     fields: [
-      { name: 'lead_id',    type: 'uuid'     },
-      { name: 'name',       type: 'fullName' },
-      { name: 'email',      type: 'email'    },
-      { name: 'company',    type: 'company'  },
-      { name: 'industry',   type: 'industry' },
-      { name: 'priority',   type: 'priority' },
-      { name: 'status',     type: 'status'   },
-      { name: 'deal_value', type: 'currency' },
-      { name: 'city',       type: 'city'     },
-      { name: 'created_at', type: 'date'     },
+      { name: 'order_id', type: 'uuid' }, { name: 'mrn', type: 'medicalRecordNo' },
+      { name: 'patient_name', type: 'fullName' }, { name: 'ordering_dr', type: 'doctorName' },
+      { name: 'test_name', type: 'labTest' }, { name: 'result', type: 'labResult' },
+      { name: 'diagnosis', type: 'diagnosis' }, { name: 'icd_code', type: 'icdCode' },
+      { name: 'priority', type: 'custom_list', config: { listValues: 'Routine,STAT,Urgent,Timed,Pre-Op' } },
+      { name: 'specimen', type: 'custom_list', config: { listValues: 'Blood,Urine,Stool,Sputum,CSF,Tissue,Swab' } },
+      { name: 'ordered_at', type: 'timestamp' },
+      { name: 'status', type: 'custom_list', config: { listValues: 'Ordered,Collected,In Progress,Resulted,Reviewed' } },
     ],
   },
   {
-    id: 'logs',
-    label: 'Server Logs',
-    icon: '🖥️',
-    description: 'Application logs with severity and metadata',
-    rowCount: 500,
+    id: 'healthcare-pharmacy', label: 'Pharmacy / Rx', icon: '💊', category: 'healthcare',
+    description: 'Prescription and medication administration records', rowCount: 120,
     fields: [
-      { name: 'log_id',    type: 'uuid'      },
-      { name: 'timestamp', type: 'timestamp' },
-      { name: 'ip',        type: 'ipAddress' },
-      { name: 'level',     type: 'custom_list', config: { listValues: 'INFO,DEBUG,WARN,ERROR,FATAL' } },
-      { name: 'service',   type: 'custom_list', config: { listValues: 'auth,api,worker,scheduler,gateway,cache' } },
-      { name: 'message',   type: 'sentence'  },
-      { name: 'duration_ms', type: 'integer' },
-      { name: 'user_agent', type: 'userAgent'},
+      { name: 'rx_id', type: 'custom_regex', config: { regexPattern: 'RX-[0-9]{8}' } },
+      { name: 'mrn', type: 'medicalRecordNo' }, { name: 'patient_name', type: 'fullName' },
+      { name: 'prescriber', type: 'doctorName' }, { name: 'medication', type: 'medication' },
+      { name: 'dosage', type: 'dosage' },
+      { name: 'route', type: 'custom_list', config: { listValues: 'Oral,IV,IM,Subcutaneous,Topical,Inhalation,Rectal,Sublingual' } },
+      { name: 'refills', type: 'custom_list', config: { listValues: '0,1,2,3,5,12' } },
+      { name: 'insurance', type: 'insuranceProvider' }, { name: 'allergies', type: 'allergen' },
+      { name: 'prescribed_at', type: 'timestamp' },
+      { name: 'status', type: 'custom_list', config: { listValues: 'Active,Completed,Discontinued,On Hold,Cancelled' } },
     ],
   },
   {
-    id: 'iot',
-    label: 'IoT Sensor Data',
-    icon: '🌡️',
-    description: 'Sensor readings from connected devices',
-    rowCount: 300,
+    id: 'healthcare-emergency', label: 'Emergency Dept', icon: '🚑', category: 'healthcare',
+    description: 'Emergency room visits with triage and acuity levels', rowCount: 100,
     fields: [
-      { name: 'sensor_id',   type: 'custom_regex',    config: { regexPattern: 'SENSOR-[A-Z]{2}[0-9]{4}' } },
-      { name: 'device_type', type: 'custom_list',     config: { listValues: 'temperature,humidity,pressure,motion,co2,luminosity' } },
-      { name: 'location',    type: 'city'             },
-      { name: 'value',       type: 'float'            },
-      { name: 'unit',        type: 'custom_list',     config: { listValues: '°C,°F,%,hPa,ppm,lux' } },
-      { name: 'status',      type: 'custom_list',     config: { listValues: 'online,offline,maintenance,fault' } },
-      { name: 'timestamp',   type: 'timestamp'        },
-      { name: 'battery_pct', type: 'percentage'       },
+      { name: 'visit_id', type: 'uuid' }, { name: 'mrn', type: 'medicalRecordNo' },
+      { name: 'patient_name', type: 'fullName' }, { name: 'age', type: 'patientAge' },
+      { name: 'gender', type: 'gender' },
+      { name: 'triage_level', type: 'custom_list', config: { listValues: 'ESI-1 Resuscitation,ESI-2 Emergent,ESI-3 Urgent,ESI-4 Less Urgent,ESI-5 Non-Urgent' } },
+      { name: 'chief_complaint', type: 'custom_list', config: { listValues: 'Chest Pain,Shortness of Breath,Abdominal Pain,Head Injury,Laceration,Fever,Syncope,Back Pain,Allergic Reaction,Seizure,Overdose,Fall,Motor Vehicle Accident' } },
+      { name: 'blood_pressure', type: 'vitalBP' }, { name: 'heart_rate', type: 'vitalHR' },
+      { name: 'spo2', type: 'vitalSpO2' }, { name: 'pain_score', type: 'painScale' },
+      { name: 'attending_dr', type: 'doctorName' }, { name: 'diagnosis', type: 'diagnosis' },
+      { name: 'procedure', type: 'procedure' },
+      { name: 'disposition', type: 'custom_list', config: { listValues: 'Discharged,Admitted to ICU,Admitted to Floor,Transferred,Left AMA,LWBS,Expired' } },
+      { name: 'arrival_mode', type: 'custom_list', config: { listValues: 'Ambulance,Walk-In,Helicopter,Police,Self-Transport' } },
+      { name: 'arrival_at', type: 'timestamp' },
     ],
   },
   {
-    id: 'healthcare-patients',
-    label: 'Patient Records',
-    icon: '🏥',
-    description: 'Complete patient demographics and medical records',
-    rowCount: 100,
+    id: 'healthcare-mental', label: 'Mental Health', icon: '🧠', category: 'healthcare',
+    description: 'Behavioral health assessments and treatment plans', rowCount: 80,
     fields: [
-      { name: 'mrn',              type: 'medicalRecordNo' },
-      { name: 'patient_name',     type: 'fullName'        },
-      { name: 'age',              type: 'patientAge'      },
-      { name: 'gender',           type: 'gender'          },
-      { name: 'blood_type',       type: 'bloodType'       },
-      { name: 'phone',            type: 'phone'           },
-      { name: 'email',            type: 'email'           },
-      { name: 'address',          type: 'address'         },
-      { name: 'insurance',        type: 'insuranceProvider'},
-      { name: 'allergies',        type: 'allergen'        },
-      { name: 'primary_diagnosis',type: 'diagnosis'       },
-      { name: 'registered_at',    type: 'timestamp'       },
+      { name: 'case_id', type: 'uuid' }, { name: 'mrn', type: 'medicalRecordNo' },
+      { name: 'patient_name', type: 'fullName' }, { name: 'age', type: 'patientAge' },
+      { name: 'gender', type: 'gender' },
+      { name: 'diagnosis', type: 'custom_list', config: { listValues: 'Major Depressive Disorder,Generalized Anxiety Disorder,Bipolar I Disorder,PTSD,Schizophrenia,OCD,Panic Disorder,ADHD,Substance Use Disorder,Borderline Personality Disorder,Social Anxiety Disorder,Eating Disorder NOS' } },
+      { name: 'icd_code', type: 'custom_list', config: { listValues: 'F32.1,F41.1,F31.9,F43.10,F20.9,F42.9,F41.0,F90.9,F10.20,F60.3,F40.10,F50.9' } },
+      { name: 'medication', type: 'custom_list', config: { listValues: 'Sertraline 50mg,Fluoxetine 20mg,Escitalopram 10mg,Lithium 300mg,Quetiapine 100mg,Aripiprazole 10mg,Buspirone 15mg,Venlafaxine 75mg,Bupropion 150mg,Trazodone 50mg,Clonazepam 0.5mg,Methylphenidate 10mg' } },
+      { name: 'therapist', type: 'doctorName' },
+      { name: 'therapy_type', type: 'custom_list', config: { listValues: 'CBT,DBT,EMDR,Psychodynamic,Group Therapy,Family Therapy,Art Therapy,Motivational Interviewing,Mindfulness-Based,Exposure Therapy' } },
+      { name: 'phq9_score', type: 'custom_list', config: { listValues: '0,2,4,6,8,10,12,14,16,18,20,22,24,27' } },
+      { name: 'gad7_score', type: 'custom_list', config: { listValues: '0,2,4,6,8,10,12,14,16,18,21' } },
+      { name: 'risk_level', type: 'custom_list', config: { listValues: 'Low,Moderate,High,Acute' } },
+      { name: 'session_date', type: 'date' },
+      { name: 'notes', type: 'nursingNote' },
     ],
   },
   {
-    id: 'healthcare-encounters',
-    label: 'Clinical Encounters',
-    icon: '🩺',
-    description: 'Hospital admissions with vitals and treatments',
-    rowCount: 150,
+    id: 'healthcare-surgical', label: 'Surgical Records', icon: '🔪', category: 'healthcare',
+    description: 'Pre-op, intra-op, and post-op surgical data', rowCount: 60,
     fields: [
-      { name: 'encounter_id',   type: 'uuid'              },
-      { name: 'mrn',            type: 'medicalRecordNo'   },
-      { name: 'patient_name',   type: 'fullName'          },
-      { name: 'admission_type', type: 'admissionType'     },
-      { name: 'ward',           type: 'hospitalWard'      },
-      { name: 'attending_dr',   type: 'doctorName'        },
-      { name: 'diagnosis',      type: 'diagnosis'         },
-      { name: 'icd_code',       type: 'icdCode'           },
-      { name: 'blood_pressure', type: 'vitalBP'           },
-      { name: 'heart_rate',     type: 'vitalHR'           },
-      { name: 'temperature',    type: 'vitalTemp'         },
-      { name: 'medication',     type: 'medication'        },
-      { name: 'dosage',         type: 'dosage'            },
-      { name: 'procedure',      type: 'procedure'         },
-      { name: 'admitted_at',    type: 'timestamp'         },
-      { name: 'discharge',      type: 'dischargeStatus'   },
-    ],
-  },
-  {
-    id: 'healthcare-lab',
-    label: 'Lab Results',
-    icon: '🧪',
-    description: 'Laboratory test orders, results, and diagnostics',
-    rowCount: 200,
-    fields: [
-      { name: 'order_id',    type: 'uuid'              },
-      { name: 'mrn',         type: 'medicalRecordNo'   },
-      { name: 'patient_name',type: 'fullName'          },
-      { name: 'ordering_dr', type: 'doctorName'        },
-      { name: 'test_name',   type: 'labTest'           },
-      { name: 'result',      type: 'labResult'         },
-      { name: 'diagnosis',   type: 'diagnosis'         },
-      { name: 'icd_code',    type: 'icdCode'           },
-      { name: 'priority',    type: 'custom_list', config: { listValues: 'Routine,STAT,Urgent,Timed,Pre-Op' } },
-      { name: 'specimen',    type: 'custom_list', config: { listValues: 'Blood,Urine,Stool,Sputum,CSF,Tissue,Swab' } },
-      { name: 'ordered_at',  type: 'timestamp'         },
-      { name: 'status',      type: 'custom_list', config: { listValues: 'Ordered,Collected,In Progress,Resulted,Reviewed' } },
-    ],
-  },
-  {
-    id: 'healthcare-pharmacy',
-    label: 'Pharmacy / Rx',
-    icon: '💊',
-    description: 'Prescription and medication administration records',
-    rowCount: 120,
-    fields: [
-      { name: 'rx_id',         type: 'custom_regex', config: { regexPattern: 'RX-[0-9]{8}' } },
-      { name: 'mrn',           type: 'medicalRecordNo'   },
-      { name: 'patient_name',  type: 'fullName'          },
-      { name: 'prescriber',    type: 'doctorName'        },
-      { name: 'medication',    type: 'medication'        },
-      { name: 'dosage',        type: 'dosage'            },
-      { name: 'route',         type: 'custom_list', config: { listValues: 'Oral,IV,IM,Subcutaneous,Topical,Inhalation,Rectal,Sublingual' } },
-      { name: 'refills',       type: 'custom_list', config: { listValues: '0,1,2,3,5,12' } },
-      { name: 'insurance',     type: 'insuranceProvider' },
-      { name: 'allergies',     type: 'allergen'          },
-      { name: 'prescribed_at', type: 'timestamp'         },
-      { name: 'status',        type: 'custom_list', config: { listValues: 'Active,Completed,Discontinued,On Hold,Cancelled' } },
+      { name: 'case_id', type: 'uuid' }, { name: 'mrn', type: 'medicalRecordNo' },
+      { name: 'patient_name', type: 'fullName' }, { name: 'age', type: 'patientAge' },
+      { name: 'room', type: 'roomNumber' }, { name: 'blood_type', type: 'bloodType' },
+      { name: 'procedure', type: 'procedure' }, { name: 'surgeon', type: 'doctorName' },
+      { name: 'anesthesia_type', type: 'custom_list', config: { listValues: 'General,Regional - Spinal,Regional - Epidural,Local,Sedation/MAC,Nerve Block' } },
+      { name: 'asa_class', type: 'custom_list', config: { listValues: 'ASA I - Healthy,ASA II - Mild Systemic,ASA III - Severe Systemic,ASA IV - Life-Threatening,ASA V - Moribund' } },
+      { name: 'pre_op_diagnosis', type: 'diagnosis' }, { name: 'post_op_diagnosis', type: 'diagnosis' },
+      { name: 'duration_min', type: 'custom_list', config: { listValues: '30,45,60,90,120,150,180,240,300,360' } },
+      { name: 'complications', type: 'custom_list', config: { listValues: 'None,Minor Bleeding,Infection,Adverse Reaction,Nerve Injury,Delayed Healing,Blood Clot,Equipment Issue' } },
+      { name: 'blood_loss_ml', type: 'custom_list', config: { listValues: '50,100,150,200,300,500,750,1000,1500' } },
+      { name: 'surgery_date', type: 'date' },
+      { name: 'discharge', type: 'dischargeStatus' },
     ],
   },
 ];

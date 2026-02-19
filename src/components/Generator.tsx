@@ -4,12 +4,18 @@ import {
   Field, FieldType, ExportFormat, CustomFieldConfig,
   generateRows, exportData, SCENARIOS,
 } from '../lib/dataGenerator';
-import { trackPageVisit } from '../lib/supabase';
+import { trackPageVisit, trackEvent } from '../lib/supabase';
+import {
+  Database, Zap, Layers, Heart, Settings, Sparkles, Plus, X, ChevronRight,
+  Copy, Download, Check, Loader2, Eye, Code2, LogOut, Activity,
+  UserCircle, Stethoscope, Building2, ListChecks, FileType, FileCode2,
+  ClipboardList, ArrowRight,
+} from 'lucide-react';
 
 // ── Field type catalogue ─────────────────────────────────────────────────
-const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType; label: string }[] }[] = [
+const FIELD_CATEGORIES: { label: string; Icon: typeof Database; types: { value: FieldType; label: string }[] }[] = [
   {
-    label: 'Personal', icon: '👤',
+    label: 'Personal', Icon: UserCircle,
     types: [
       { value: 'fullName',  label: 'Full Name'  },
       { value: 'firstName', label: 'First Name' },
@@ -21,7 +27,7 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
     ],
   },
   {
-    label: 'Location', icon: '📍',
+    label: 'Location', Icon: Building2,
     types: [
       { value: 'address', label: 'Address'  },
       { value: 'city',    label: 'City'     },
@@ -31,7 +37,7 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
     ],
   },
   {
-    label: 'Business', icon: '🏢',
+    label: 'Business', Icon: Building2,
     types: [
       { value: 'company',     label: 'Company'    },
       { value: 'jobTitle',    label: 'Job Title'  },
@@ -45,7 +51,7 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
     ],
   },
   {
-    label: 'Data', icon: '🔢',
+    label: 'Data', Icon: Database,
     types: [
       { value: 'uuid',        label: 'UUID'       },
       { value: 'integer',     label: 'Integer'    },
@@ -61,7 +67,7 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
     ],
   },
   {
-    label: 'Internet', icon: '🌐',
+    label: 'Internet', Icon: Activity,
     types: [
       { value: 'url',        label: 'URL'        },
       { value: 'ipAddress',  label: 'IP Address' },
@@ -71,7 +77,7 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
     ],
   },
   {
-    label: 'Text', icon: '📝',
+    label: 'Text', Icon: FileType,
     types: [
       { value: 'sentence',  label: 'Sentence'  },
       { value: 'paragraph', label: 'Paragraph' },
@@ -80,7 +86,7 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
     ],
   },
   {
-    label: 'Healthcare', icon: '🏥',
+    label: 'Healthcare', Icon: Heart,
     types: [
       { value: 'medicalRecordNo',  label: 'Medical Record #'  },
       { value: 'diagnosis',        label: 'Diagnosis'         },
@@ -96,16 +102,24 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
       { value: 'vitalBP',          label: 'Blood Pressure'    },
       { value: 'vitalHR',          label: 'Heart Rate'        },
       { value: 'vitalTemp',        label: 'Temperature'       },
+      { value: 'vitalSpO2',        label: 'SpO₂ Oxygen'      },
+      { value: 'vitalRR',          label: 'Respiratory Rate'  },
       { value: 'labTest',          label: 'Lab Test'          },
       { value: 'labResult',        label: 'Lab Result'        },
       { value: 'patientAge',       label: 'Patient Age'       },
       { value: 'gender',           label: 'Gender'            },
       { value: 'admissionType',    label: 'Admission Type'    },
       { value: 'dischargeStatus',  label: 'Discharge Status'  },
+      { value: 'bmi',              label: 'BMI'               },
+      { value: 'painScale',        label: 'Pain Scale'        },
+      { value: 'roomNumber',       label: 'Room Number'       },
+      { value: 'nursingNote',      label: 'Nursing Note'      },
+      { value: 'emergencyContact', label: 'Emergency Contact' },
+      { value: 'copayAmount',      label: 'Copay Amount'      },
     ],
   },
   {
-    label: 'Custom', icon: '⚙️',
+    label: 'Custom', Icon: Settings,
     types: [
       { value: 'custom_list',     label: 'Custom List'     },
       { value: 'custom_regex',    label: 'Custom Pattern'  },
@@ -117,21 +131,50 @@ const FIELD_CATEGORIES: { label: string; icon: string; types: { value: FieldType
 const ALL_TYPES = FIELD_CATEGORIES.flatMap(c => c.types);
 const typeLabel = (t: FieldType) => ALL_TYPES.find(x => x.value === t)?.label ?? t;
 
-const FORMAT_OPTS: { value: ExportFormat; label: string; color: string }[] = [
-  { value: 'json', label: 'JSON', color: '#f59e0b' },
-  { value: 'csv',  label: 'CSV',  color: '#10b981' },
-  { value: 'sql',  label: 'SQL',  color: '#3b82f6' },
-  { value: 'xml',  label: 'XML',  color: '#ef4444' },
+const FORMAT_OPTS: { value: ExportFormat; label: string; color: string; Icon: typeof Database }[] = [
+  { value: 'json', label: 'JSON', color: '#f59e0b', Icon: ClipboardList },
+  { value: 'csv',  label: 'CSV',  color: '#10b981', Icon: FileType },
+  { value: 'sql',  label: 'SQL',  color: '#3b82f6', Icon: Database },
+  { value: 'xml',  label: 'XML',  color: '#ef4444', Icon: FileCode2 },
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const CUSTOM_TYPES: FieldType[] = ['custom_list', 'custom_regex', 'custom_template'];
 
-type SideTab = 'schema' | 'custom' | 'scenarios';
+const HEALTHCARE_TYPES: FieldType[] = [
+  'medicalRecordNo','diagnosis','icdCode','medication','dosage','bloodType','allergen',
+  'procedure','insuranceProvider','hospitalWard','doctorName','vitalBP','vitalHR',
+  'vitalTemp','vitalSpO2','vitalRR','labTest','labResult','patientAge','gender',
+  'admissionType','dischargeStatus','bmi','painScale','roomNumber','nursingNote',
+  'emergencyContact','copayAmount',
+];
 
-interface Props { userName: string; onSignOut: () => void; }
+const isHealthcareType = (t: FieldType) => HEALTHCARE_TYPES.includes(t);
 
-export default function Generator({ userName, onSignOut }: Props) {
+type SideTab = 'schema' | 'healthcare' | 'custom' | 'scenarios';
+
+interface Props { userName: string; userEmail?: string; onSignOut: () => void; }
+
+const HC_SUBCATEGORIES = [
+  {
+    label: 'Patient Info', Icon: UserCircle, color: '#06b6d4',
+    types: ['medicalRecordNo','patientAge','gender','bloodType','bmi','allergen','emergencyContact'] as FieldType[],
+  },
+  {
+    label: 'Vitals & Assessment', Icon: Activity, color: '#ef4444',
+    types: ['vitalBP','vitalHR','vitalTemp','vitalSpO2','vitalRR','painScale'] as FieldType[],
+  },
+  {
+    label: 'Clinical', Icon: Stethoscope, color: '#8b5cf6',
+    types: ['diagnosis','icdCode','procedure','medication','dosage','labTest','labResult'] as FieldType[],
+  },
+  {
+    label: 'Facility & Billing', Icon: Building2, color: '#f59e0b',
+    types: ['hospitalWard','roomNumber','doctorName','admissionType','dischargeStatus','insuranceProvider','copayAmount','nursingNote'] as FieldType[],
+  },
+];
+
+export default function Generator({ userName, userEmail, onSignOut }: Props) {
   const [fields, setFields]           = useState<Field[]>([
     { id: uid(), name: 'id',      type: 'uuid'     },
     { id: uid(), name: 'name',    type: 'fullName' },
@@ -150,16 +193,14 @@ export default function Generator({ userName, onSignOut }: Props) {
   const [tableName, setTableName]     = useState('my_table');
   const [editingConfig, setEditingConfig] = useState<string | null>(null);
 
-  // Custom field being built in the Custom tab
   const [customName, setCustomName]   = useState('my_field');
   const [customType, setCustomType]   = useState<FieldType>('custom_list');
   const [customList, setCustomList]   = useState('option_a,option_b,option_c');
   const [customRegex, setCustomRegex] = useState('[A-Z]{3}[0-9]{4}');
   const [customTmpl, setCustomTmpl]   = useState('ITEM-{{integer}}-{{city}}');
 
-  // ── Field ops ─────────────────────────────────────────────────────────
   const addField = (type: FieldType, config?: CustomFieldConfig) => {
-    const base = typeLabel(type).toLowerCase().replace(/\s+/g, '_');
+    const base = typeLabel(type).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     setFields(f => [...f, { id: uid(), name: `${base}_${uid().slice(0, 4)}`, type, config }]);
     setShowAddPanel(false);
   };
@@ -188,7 +229,6 @@ export default function Generator({ userName, onSignOut }: Props) {
     setSideTab('schema');
   };
 
-  // ── Generate ──────────────────────────────────────────────────────────
   const handleGenerate = useCallback(async () => {
     if (!fields.length) return;
     setGenerating(true);
@@ -199,8 +239,14 @@ export default function Generator({ userName, onSignOut }: Props) {
     setOutputText(text);
     setGenerating(false);
     setActiveTab('table');
-    trackPageVisit('generate', userName);
-  }, [fields, count, format, tableName, userName]);
+    trackPageVisit('generate', userEmail || userName);
+    trackEvent('generate', userEmail || userName, {
+      fields: fields.length,
+      rows: count,
+      format,
+      healthcareFields: fields.filter(f => isHealthcareType(f.type)).length,
+    });
+  }, [fields, count, format, tableName, userName, userEmail]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(outputText);
@@ -218,8 +264,9 @@ export default function Generator({ userName, onSignOut }: Props) {
 
   const previewRows = rows.slice(0, 10);
   const headers     = fields.map(f => f.name);
+  const healthcareFieldCount = fields.filter(f => isHealthcareType(f.type)).length;
+  const healthcareScenarios = SCENARIOS.filter(s => s.category === 'healthcare');
 
-  // ── Helpers for config display ─────────────────────────────────────────
   const configSummary = (f: Field) => {
     if (!f.config) return null;
     if (f.type === 'custom_list') return f.config.listValues?.slice(0, 30) + (f.config.listValues && f.config.listValues.length > 30 ? '…' : '');
@@ -231,34 +278,43 @@ export default function Generator({ userName, onSignOut }: Props) {
   return (
     <div className="min-h-screen" style={{ background: '#07070f', fontFamily: 'Inter, sans-serif' }}>
 
-      {/* ── Top Nav ─────────────────────────────────────────────────────── */}
+      {/* ── Top Nav ──────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 border-b border-white/10"
            style={{ background: 'rgba(7,7,15,0.9)', backdropFilter: 'blur(20px)' }}>
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between px-6 h-16">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                 style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', boxShadow: '0 0 20px rgba(249,115,22,0.4)' }}>
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 5.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-              </svg>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center relative"
+                 style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', boxShadow: '0 0 24px rgba(249,115,22,0.4)' }}>
+              <Database className="w-5 h-5 text-white" strokeWidth={2} />
+              <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center bg-amber-400">
+                <Zap className="w-2 h-2 text-slate-900" fill="currentColor" />
+              </div>
             </div>
             <span className="font-black text-white text-xl tracking-tight">
               Data<span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg,#f97316,#fbbf24)' }}> Forge</span>
             </span>
-            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-orange-400 border border-orange-500/30 ml-1"
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold text-orange-400 border border-orange-500/30 ml-1"
                   style={{ background: 'rgba(249,115,22,0.08)' }}>
-              ⚡ PRO
+              <Zap className="w-3 h-3" /> PRO
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {healthcareFieldCount > 0 && (
+              <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/30"
+                   style={{ background: 'rgba(16,185,129,0.08)' }}>
+                <Heart className="w-3 h-3 text-emerald-400" strokeWidth={2} />
+                <span className="text-[10px] text-emerald-400 font-bold">{healthcareFieldCount} HC fields</span>
+              </div>
+            )}
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10"
                  style={{ background: 'rgba(255,255,255,0.04)' }}>
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-slate-400 font-medium">{userName}</span>
             </div>
             <button onClick={onSignOut}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-white border border-white/10 hover:border-white/20 transition-all">
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-white border border-white/10 hover:border-white/20 transition-all flex items-center gap-1.5">
+              <LogOut className="w-3.5 h-3.5" strokeWidth={2} />
               Sign Out
             </button>
           </div>
@@ -267,49 +323,57 @@ export default function Generator({ userName, onSignOut }: Props) {
 
       <div className="max-w-screen-2xl mx-auto px-4 md:px-6 py-6 flex gap-5">
 
-        {/* ── LEFT SIDEBAR ────────────────────────────────────────────── */}
+        {/* ── LEFT SIDEBAR ─────────────────────────────────────────── */}
         <div className="w-72 xl:w-80 flex-shrink-0 space-y-4">
 
           {/* Sidebar tab strip */}
           <div className="flex rounded-2xl p-1 border border-white/10"
                style={{ background: 'rgba(255,255,255,0.03)' }}>
             {([
-              { id: 'schema',    label: 'Schema',    icon: '🏗️' },
-              { id: 'custom',    label: 'Custom',    icon: '⚙️' },
-              { id: 'scenarios', label: 'Scenarios', icon: '🎭' },
-            ] as { id: SideTab; label: string; icon: string }[]).map(t => (
+              { id: 'schema' as SideTab, label: 'Schema', Icon: Layers },
+              { id: 'healthcare' as SideTab, label: 'Health', Icon: Heart },
+              { id: 'custom' as SideTab, label: 'Custom', Icon: Settings },
+              { id: 'scenarios' as SideTab, label: 'Scenes', Icon: Sparkles },
+            ]).map(t => (
               <button key={t.id} onClick={() => setSideTab(t.id)}
-                      className={cn('flex-1 py-2 text-[11px] font-bold rounded-xl transition-all',
+                      className={cn('flex-1 py-2 text-[10px] font-bold rounded-xl transition-all flex items-center justify-center gap-1',
                         sideTab === t.id ? 'text-white' : 'text-slate-600 hover:text-slate-400')}
-                      style={sideTab === t.id ? { background: 'linear-gradient(135deg,#f97316,#ea580c)', boxShadow: '0 4px 12px rgba(249,115,22,0.35)' } : {}}>
-                <span className="mr-1">{t.icon}</span>{t.label}
+                      style={sideTab === t.id
+                        ? t.id === 'healthcare'
+                          ? { background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 12px rgba(16,185,129,0.35)' }
+                          : { background: 'linear-gradient(135deg,#f97316,#ea580c)', boxShadow: '0 4px 12px rgba(249,115,22,0.35)' }
+                        : {}}>
+                <t.Icon className="w-3 h-3" strokeWidth={2} />{t.label}
               </button>
             ))}
           </div>
 
-          {/* ── SCHEMA TAB ────────────────────────────────────────────── */}
+          {/* ── SCHEMA TAB ─────────────────────────────────────────── */}
           {sideTab === 'schema' && (
             <>
               <div className="rounded-2xl border border-white/10 overflow-hidden"
                    style={{ background: 'rgba(255,255,255,0.025)' }}>
                 <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Schema Fields</span>
+                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-orange-400" strokeWidth={2} />
+                    Schema Fields
+                  </span>
                   <span className="text-[10px] text-slate-600 font-semibold bg-white/5 px-2 py-0.5 rounded-full">{fields.length}</span>
                 </div>
                 <div className="p-2.5 space-y-1.5 max-h-[340px] overflow-y-auto">
                   {fields.map((f, i) => (
                     <div key={f.id} className="group rounded-xl border border-white/5 hover:border-white/10 transition-all"
-                         style={{ background: 'rgba(255,255,255,0.02)' }}>
+                         style={{ background: isHealthcareType(f.type) ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)' }}>
                       <div className="flex items-center gap-2 px-2.5 py-2">
-                        <span className="text-[10px] text-slate-700 font-mono w-4 text-center flex-shrink-0">{i + 1}</span>
+                        <span className={cn("text-[10px] font-mono w-4 text-center flex-shrink-0", isHealthcareType(f.type) ? 'text-emerald-700' : 'text-slate-700')}>{i + 1}</span>
                         <input value={f.name} onChange={e => updateName(f.id, e.target.value)}
                                className="flex-1 min-w-0 bg-transparent text-xs text-slate-300 outline-none font-mono"
                                placeholder="field_name" />
                         <select value={f.type} onChange={e => updateType(f.id, e.target.value as FieldType)}
                                 className="text-[10px] bg-transparent outline-none cursor-pointer max-w-[100px] truncate"
-                                style={{ color: CUSTOM_TYPES.includes(f.type) ? '#fb923c' : '#818cf8' }}>
+                                style={{ color: isHealthcareType(f.type) ? '#34d399' : CUSTOM_TYPES.includes(f.type) ? '#fb923c' : '#818cf8' }}>
                           {FIELD_CATEGORIES.map(cat => (
-                            <optgroup key={cat.label} label={`${cat.icon} ${cat.label}`}>
+                            <optgroup key={cat.label} label={cat.label}>
                               {cat.types.map(t => (
                                 <option key={t.value} value={t.value} style={{ background: '#1a1a2e' }}>{t.label}</option>
                               ))}
@@ -317,49 +381,41 @@ export default function Generator({ userName, onSignOut }: Props) {
                           ))}
                         </select>
                         <button onClick={() => removeField(f.id)}
-                                className="opacity-0 group-hover:opacity-100 text-slate-700 hover:text-rose-400 transition-all flex-shrink-0">
-                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                className="opacity-0 group-hover:opacity-100 text-slate-700 hover:text-rose-400 transition-all flex-shrink-0 p-0.5 rounded hover:bg-rose-500/10">
+                          <X className="w-3 h-3" strokeWidth={2.5} />
                         </button>
                       </div>
-                      {/* Custom config inline */}
                       {CUSTOM_TYPES.includes(f.type) && (
                         <div className="px-2.5 pb-2">
                           {editingConfig === f.id ? (
                             <div className="space-y-1.5">
                               {f.type === 'custom_list' && (
-                                <input
-                                  value={f.config?.listValues ?? ''}
-                                  onChange={e => updateConfig(f.id, { listValues: e.target.value })}
-                                  placeholder="val1,val2,val3"
-                                  className="w-full text-[10px] font-mono px-2 py-1.5 rounded-lg outline-none text-slate-300 border border-white/10"
-                                  style={{ background: 'rgba(255,255,255,0.05)' }}
-                                />
+                                <input value={f.config?.listValues ?? ''} onChange={e => updateConfig(f.id, { listValues: e.target.value })}
+                                       placeholder="val1,val2,val3"
+                                       className="w-full text-[10px] font-mono px-2 py-1.5 rounded-lg outline-none text-slate-300 border border-white/10"
+                                       style={{ background: 'rgba(255,255,255,0.05)' }} />
                               )}
                               {f.type === 'custom_regex' && (
-                                <input
-                                  value={f.config?.regexPattern ?? ''}
-                                  onChange={e => updateConfig(f.id, { regexPattern: e.target.value })}
-                                  placeholder="[A-Z]{3}[0-9]{4}"
-                                  className="w-full text-[10px] font-mono px-2 py-1.5 rounded-lg outline-none text-slate-300 border border-white/10"
-                                  style={{ background: 'rgba(255,255,255,0.05)' }}
-                                />
+                                <input value={f.config?.regexPattern ?? ''} onChange={e => updateConfig(f.id, { regexPattern: e.target.value })}
+                                       placeholder="[A-Z]{3}[0-9]{4}"
+                                       className="w-full text-[10px] font-mono px-2 py-1.5 rounded-lg outline-none text-slate-300 border border-white/10"
+                                       style={{ background: 'rgba(255,255,255,0.05)' }} />
                               )}
                               {f.type === 'custom_template' && (
-                                <input
-                                  value={f.config?.template ?? ''}
-                                  onChange={e => updateConfig(f.id, { template: e.target.value })}
-                                  placeholder="ITEM-{{integer}}-{{city}}"
-                                  className="w-full text-[10px] font-mono px-2 py-1.5 rounded-lg outline-none text-slate-300 border border-white/10"
-                                  style={{ background: 'rgba(255,255,255,0.05)' }}
-                                />
+                                <input value={f.config?.template ?? ''} onChange={e => updateConfig(f.id, { template: e.target.value })}
+                                       placeholder="ITEM-{{integer}}-{{city}}"
+                                       className="w-full text-[10px] font-mono px-2 py-1.5 rounded-lg outline-none text-slate-300 border border-white/10"
+                                       style={{ background: 'rgba(255,255,255,0.05)' }} />
                               )}
                               <button onClick={() => setEditingConfig(null)}
-                                      className="text-[10px] text-orange-400 font-semibold hover:text-orange-300">Done ✓</button>
+                                      className="text-[10px] text-orange-400 font-semibold hover:text-orange-300 flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Done
+                              </button>
                             </div>
                           ) : (
                             <button onClick={() => setEditingConfig(f.id)}
                                     className="flex items-center gap-1 text-[10px] text-slate-600 hover:text-orange-400 font-mono transition-colors">
-                              <span className="text-orange-500/60">⚙</span>
+                              <Settings className="w-3 h-3 text-orange-500/60" strokeWidth={2} />
                               <span className="truncate max-w-[180px]">{configSummary(f) ?? 'Configure…'}</span>
                             </button>
                           )}
@@ -376,29 +432,32 @@ export default function Generator({ userName, onSignOut }: Props) {
                             borderColor: showAddPanel ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.1)',
                             background: showAddPanel ? 'rgba(249,115,22,0.05)' : 'transparent',
                           }}>
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M12 5v14M5 12h14"/></svg>
+                    {showAddPanel ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
                     {showAddPanel ? 'Close Picker' : 'Add Field'}
                   </button>
                 </div>
               </div>
 
-              {/* Add field type picker */}
               {showAddPanel && (
                 <div className="rounded-2xl border border-white/10 overflow-hidden"
                      style={{ background: 'rgba(255,255,255,0.025)' }}>
                   <div className="px-4 py-3 border-b border-white/10">
-                    <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Pick Type</span>
+                    <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <ListChecks className="w-3.5 h-3.5 text-orange-400" /> Pick Type
+                    </span>
                   </div>
                   <div className="p-3 space-y-3 max-h-64 overflow-y-auto">
                     {FIELD_CATEGORIES.map(cat => (
                       <div key={cat.label}>
-                        <div className="text-[10px] text-slate-600 font-bold mb-1.5 px-1 uppercase tracking-wider">{cat.icon} {cat.label}</div>
+                        <div className="text-[10px] text-slate-600 font-bold mb-1.5 px-1 uppercase tracking-wider flex items-center gap-1">
+                          <cat.Icon className="w-3 h-3" strokeWidth={2} /> {cat.label}
+                        </div>
                         <div className="flex flex-wrap gap-1.5">
                           {cat.types.map(t => (
                             <button key={t.value} onClick={() => addField(t.value)}
-                                    className="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-white/10 transition-all"
-                                    style={{ color: CUSTOM_TYPES.includes(t.value) ? '#fb923c' : '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
-                                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = CUSTOM_TYPES.includes(t.value) ? 'rgba(249,115,22,0.4)' : 'rgba(99,102,241,0.4)'; }}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-white/10 transition-all hover:scale-[1.02]"
+                                    style={{ color: isHealthcareType(t.value) ? '#34d399' : CUSTOM_TYPES.includes(t.value) ? '#fb923c' : '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
+                                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = isHealthcareType(t.value) ? 'rgba(16,185,129,0.4)' : CUSTOM_TYPES.includes(t.value) ? 'rgba(249,115,22,0.4)' : 'rgba(99,102,241,0.4)'; }}
                                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; }}>
                               {t.label}
                             </button>
@@ -412,17 +471,121 @@ export default function Generator({ userName, onSignOut }: Props) {
             </>
           )}
 
-          {/* ── CUSTOM FIELDS TAB ─────────────────────────────────────── */}
+          {/* ── HEALTHCARE TAB ─────────────────────────────────────── */}
+          {sideTab === 'healthcare' && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border overflow-hidden relative"
+                   style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.05))', borderColor: 'rgba(16,185,129,0.2)' }}>
+                <div className="absolute inset-0 opacity-10 pointer-events-none"
+                     style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, #10b981, transparent 50%)' }} />
+                <div className="relative p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                         style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 20px rgba(16,185,129,0.3)' }}>
+                      <Heart className="w-7 h-7 text-white" strokeWidth={1.8} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-white">Healthcare Data</h3>
+                      <p className="text-[10px] text-emerald-400/70 font-medium">28 field types · 7 scenarios</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Generate HIPAA-safe synthetic patient records, clinical encounters, lab results, prescriptions, emergency visits, and more.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 overflow-hidden"
+                   style={{ background: 'rgba(255,255,255,0.025)' }}>
+                <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Quick Add Fields
+                  </span>
+                  <span className="text-[10px] text-slate-600 font-semibold">Click to add</span>
+                </div>
+                <div className="p-3 space-y-4 max-h-[370px] overflow-y-auto">
+                  {HC_SUBCATEGORIES.map(sub => (
+                    <div key={sub.label}>
+                      <div className="flex items-center gap-1.5 mb-2 px-1">
+                        <sub.Icon className="w-3.5 h-3.5" style={{ color: sub.color }} strokeWidth={2} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: sub.color }}>{sub.label}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sub.types.map(t => (
+                          <button key={t} onClick={() => addField(t)}
+                                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:scale-[1.02]"
+                                  style={{ color: '#34d399', background: 'rgba(16,185,129,0.04)', borderColor: 'rgba(16,185,129,0.15)' }}
+                                  onMouseEnter={e => {
+                                    (e.currentTarget as HTMLElement).style.borderColor = 'rgba(16,185,129,0.5)';
+                                    (e.currentTarget as HTMLElement).style.background = 'rgba(16,185,129,0.1)';
+                                  }}
+                                  onMouseLeave={e => {
+                                    (e.currentTarget as HTMLElement).style.borderColor = 'rgba(16,185,129,0.15)';
+                                    (e.currentTarget as HTMLElement).style.background = 'rgba(16,185,129,0.04)';
+                                  }}>
+                            {typeLabel(t)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 overflow-hidden"
+                   style={{ background: 'rgba(255,255,255,0.025)' }}>
+                <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
+                  <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" strokeWidth={2} /> Healthcare Scenarios
+                  </span>
+                </div>
+                <div className="p-3 space-y-2">
+                  {healthcareScenarios.map(sc => (
+                    <button key={sc.id} onClick={() => loadScenario(sc.id)}
+                            className="w-full text-left rounded-xl p-3 border transition-all group"
+                            style={{ background: 'rgba(16,185,129,0.02)', borderColor: 'rgba(16,185,129,0.1)' }}
+                            onMouseEnter={e => {
+                              (e.currentTarget as HTMLElement).style.background = 'rgba(16,185,129,0.06)';
+                              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(16,185,129,0.3)';
+                            }}
+                            onMouseLeave={e => {
+                              (e.currentTarget as HTMLElement).style.background = 'rgba(16,185,129,0.02)';
+                              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(16,185,129,0.1)';
+                            }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                               style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)' }}>
+                            <Heart className="w-4 h-4 text-emerald-400" strokeWidth={1.8} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-emerald-200 group-hover:text-white transition-colors">{sc.label}</div>
+                            <div className="text-[10px] text-slate-600 mt-0.5">{sc.description}</div>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-700 group-hover:text-emerald-400 flex-shrink-0 mt-0.5 transition-colors" />
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-[10px] text-emerald-600 font-mono">{sc.fields.length} fields</span>
+                        <span className="text-slate-800">·</span>
+                        <span className="text-[10px] text-emerald-600 font-mono">{sc.rowCount ?? 50} rows</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── CUSTOM FIELDS TAB ──────────────────────────────────── */}
           {sideTab === 'custom' && (
             <div className="rounded-2xl border border-white/10 overflow-hidden"
                  style={{ background: 'rgba(255,255,255,0.025)' }}>
               <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
-                <span className="text-sm">⚙️</span>
+                <Settings className="w-4 h-4 text-orange-400" strokeWidth={2} />
                 <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Custom Field Builder</span>
               </div>
               <div className="p-4 space-y-5">
-
-                {/* Field name */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Field Name</label>
                   <input value={customName} onChange={e => setCustomName(e.target.value)}
@@ -432,22 +595,21 @@ export default function Generator({ userName, onSignOut }: Props) {
                          onFocus={e => { e.target.style.borderColor = '#f97316'; e.target.style.boxShadow = '0 0 0 2px rgba(249,115,22,0.2)'; }}
                          onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }} />
                 </div>
-
-                {/* Type selector */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Custom Type</label>
                   <div className="grid grid-cols-3 gap-1.5">
                     {([
-                      { value: 'custom_list',     label: '📋 List',     desc: 'Pick from values' },
-                      { value: 'custom_regex',    label: '🔡 Pattern',  desc: 'Regex-style' },
-                      { value: 'custom_template', label: '📐 Template', desc: 'Token-based' },
-                    ] as { value: FieldType; label: string; desc: string }[]).map(t => (
+                      { value: 'custom_list' as FieldType, label: 'List', Icon: ListChecks, desc: 'Pick from values' },
+                      { value: 'custom_regex' as FieldType, label: 'Pattern', Icon: FileCode2, desc: 'Regex-style' },
+                      { value: 'custom_template' as FieldType, label: 'Template', Icon: FileType, desc: 'Token-based' },
+                    ]).map(t => (
                       <button key={t.value} onClick={() => setCustomType(t.value)}
                               className="py-2.5 px-2 rounded-xl text-center transition-all border"
                               style={{
                                 background: customType === t.value ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.03)',
                                 borderColor: customType === t.value ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.08)',
                               }}>
+                        <t.Icon className="w-4 h-4 mx-auto mb-1" style={{ color: customType === t.value ? '#fb923c' : '#64748b' }} strokeWidth={1.8} />
                         <div className="text-[11px] font-bold" style={{ color: customType === t.value ? '#fb923c' : '#64748b' }}>{t.label}</div>
                         <div className="text-[9px] text-slate-700 mt-0.5">{t.desc}</div>
                       </button>
@@ -455,7 +617,6 @@ export default function Generator({ userName, onSignOut }: Props) {
                   </div>
                 </div>
 
-                {/* Config per type */}
                 {customType === 'custom_list' && (
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
@@ -467,7 +628,6 @@ export default function Generator({ userName, onSignOut }: Props) {
                               style={{ background: 'rgba(255,255,255,0.05)' }}
                               onFocus={e => { e.target.style.borderColor = '#f97316'; e.target.style.boxShadow = '0 0 0 2px rgba(249,115,22,0.2)'; }}
                               onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }} />
-                    <p className="text-[10px] text-slate-700 mt-1.5">One random value will be picked per row.</p>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {customList.split(',').slice(0, 6).map(v => v.trim()).filter(Boolean).map((v, i) => (
                         <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-orange-400 border border-orange-500/25"
@@ -476,7 +636,6 @@ export default function Generator({ userName, onSignOut }: Props) {
                     </div>
                   </div>
                 )}
-
                 {customType === 'custom_regex' && (
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Pattern</label>
@@ -486,25 +645,8 @@ export default function Generator({ userName, onSignOut }: Props) {
                            style={{ background: 'rgba(255,255,255,0.05)' }}
                            onFocus={e => { e.target.style.borderColor = '#f97316'; e.target.style.boxShadow = '0 0 0 2px rgba(249,115,22,0.2)'; }}
                            onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }} />
-                    <div className="mt-3 rounded-xl p-3 space-y-1.5 border border-white/5"
-                         style={{ background: 'rgba(255,255,255,0.03)' }}>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Supported Tokens</p>
-                      {[
-                        ['[A-Z]{n}', 'n uppercase letters'],
-                        ['[a-z]{n}', 'n lowercase letters'],
-                        ['[0-9]{n}', 'n digits'],
-                        ['[A-Za-z0-9]{n}', 'n alphanumeric'],
-                        ['LITERAL',  'copied as-is'],
-                      ].map(([tok, desc]) => (
-                        <div key={tok} className="flex items-center gap-2">
-                          <code className="text-[10px] text-orange-400 font-mono bg-orange-500/10 px-1.5 py-0.5 rounded">{tok}</code>
-                          <span className="text-[10px] text-slate-600">{desc}</span>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
-
                 {customType === 'custom_template' && (
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Template String</label>
@@ -514,71 +656,59 @@ export default function Generator({ userName, onSignOut }: Props) {
                            style={{ background: 'rgba(255,255,255,0.05)' }}
                            onFocus={e => { e.target.style.borderColor = '#f97316'; e.target.style.boxShadow = '0 0 0 2px rgba(249,115,22,0.2)'; }}
                            onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }} />
-                    <div className="mt-3 rounded-xl p-3 space-y-1.5 border border-white/5"
-                         style={{ background: 'rgba(255,255,255,0.03)' }}>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Token Examples</p>
-                      {[
-                        ['{{integer}}',   'Random integer'],
-                        ['{{city}}',      'Random city'],
-                        ['{{firstName}}', 'Random first name'],
-                        ['{{uuid}}',      'UUID v4'],
-                        ['{{date}}',      'Random date'],
-                        ['{{company}}',   'Company name'],
-                      ].map(([tok, desc]) => (
-                        <div key={tok} className="flex items-center gap-2">
-                          <code className="text-[10px] text-orange-400 font-mono bg-orange-500/10 px-1.5 py-0.5 rounded">{tok}</code>
-                          <span className="text-[10px] text-slate-600">{desc}</span>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
 
                 <button onClick={addCustomField}
-                        className="w-full py-3 rounded-xl font-black text-white text-sm flex items-center justify-center gap-2 transition-all"
+                        className="w-full py-3 rounded-xl font-black text-white text-sm flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
                         style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', boxShadow: '0 6px 20px rgba(249,115,22,0.4)' }}>
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M12 5v14M5 12h14"/></svg>
+                  <Plus className="w-4 h-4" strokeWidth={2.5} />
                   Add to Schema
                 </button>
               </div>
             </div>
           )}
 
-          {/* ── SCENARIOS TAB ─────────────────────────────────────────── */}
+          {/* ── SCENARIOS TAB ──────────────────────────────────────── */}
           {sideTab === 'scenarios' && (
             <div className="rounded-2xl border border-white/10 overflow-hidden"
                  style={{ background: 'rgba(255,255,255,0.025)' }}>
               <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
-                <span className="text-sm">🎭</span>
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Scenarios</span>
+                <Sparkles className="w-4 h-4 text-orange-400" strokeWidth={2} />
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">All Scenarios</span>
               </div>
               <div className="p-3 space-y-2 max-h-[560px] overflow-y-auto">
                 {SCENARIOS.map(sc => (
                   <button key={sc.id} onClick={() => loadScenario(sc.id)}
                           className="w-full text-left rounded-xl p-3 border border-white/8 hover:border-orange-500/30 transition-all group"
-                          style={{ background: 'rgba(255,255,255,0.02)' }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(249,115,22,0.04)'; }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'; }}>
+                          style={{ background: sc.category === 'healthcare' ? 'rgba(16,185,129,0.02)' : 'rgba(255,255,255,0.02)' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = sc.category === 'healthcare' ? 'rgba(16,185,129,0.06)' : 'rgba(249,115,22,0.04)'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = sc.category === 'healthcare' ? 'rgba(16,185,129,0.02)' : 'rgba(255,255,255,0.02)'; }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg leading-none">{sc.icon}</span>
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                             style={{ background: sc.category === 'healthcare' ? 'rgba(16,185,129,0.12)' : 'rgba(249,115,22,0.12)', border: `1px solid ${sc.category === 'healthcare' ? 'rgba(16,185,129,0.25)' : 'rgba(249,115,22,0.25)'}` }}>
+                          {sc.category === 'healthcare'
+                            ? <Heart className="w-4 h-4 text-emerald-400" strokeWidth={1.8} />
+                            : <Sparkles className="w-4 h-4 text-orange-400" strokeWidth={1.8} />
+                          }
+                        </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">{sc.label}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn("text-xs font-bold group-hover:text-white transition-colors", sc.category === 'healthcare' ? 'text-emerald-300' : 'text-slate-300')}>{sc.label}</span>
+                            {sc.category === 'healthcare' && (
+                              <span className="text-[8px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">HC</span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-slate-600 mt-0.5">{sc.description}</div>
                         </div>
                       </div>
-                      <svg className="w-3.5 h-3.5 text-slate-700 group-hover:text-orange-400 flex-shrink-0 mt-0.5 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M9 18l6-6-6-6"/></svg>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-700 group-hover:text-orange-400 flex-shrink-0 mt-0.5 transition-colors" />
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-[10px] text-slate-700 font-mono">{sc.fields.length} fields</span>
                       <span className="text-slate-800">·</span>
                       <span className="text-[10px] text-slate-700 font-mono">{sc.rowCount ?? 50} rows</span>
-                      {sc.fields.some(f => f.type.startsWith('custom_')) && (
-                        <>
-                          <span className="text-slate-800">·</span>
-                          <span className="text-[10px] text-orange-500 font-semibold">custom fields</span>
-                        </>
-                      )}
                     </div>
                   </button>
                 ))}
@@ -590,7 +720,9 @@ export default function Generator({ userName, onSignOut }: Props) {
           <div className="rounded-2xl border border-white/10 overflow-hidden"
                style={{ background: 'rgba(255,255,255,0.025)' }}>
             <div className="px-4 py-3 border-b border-white/10">
-              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Settings</span>
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Settings className="w-3.5 h-3.5 text-slate-500" strokeWidth={2} /> Settings
+              </span>
             </div>
             <div className="p-4 space-y-4">
               <div>
@@ -614,8 +746,9 @@ export default function Generator({ userName, onSignOut }: Props) {
                 <div className="grid grid-cols-4 gap-1.5">
                   {FORMAT_OPTS.map(f => (
                     <button key={f.value} onClick={() => setFormat(f.value)}
-                            className={cn('py-2 rounded-xl text-xs font-black transition-all', format === f.value ? 'text-white' : 'text-slate-600 hover:text-slate-400 border border-white/10')}
+                            className={cn('py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1', format === f.value ? 'text-white' : 'text-slate-600 hover:text-slate-400 border border-white/10')}
                             style={format === f.value ? { background: f.color, boxShadow: `0 4px 14px ${f.color}55` } : { background: 'rgba(255,255,255,0.03)' }}>
+                      <f.Icon className="w-3 h-3" strokeWidth={2} />
                       {f.label}
                     </button>
                   ))}
@@ -626,42 +759,44 @@ export default function Generator({ userName, onSignOut }: Props) {
 
           {/* Generate CTA */}
           <button onClick={handleGenerate} disabled={generating || !fields.length}
-                  className="w-full py-4 rounded-2xl font-black text-white text-sm transition-all duration-300 flex items-center justify-center gap-2"
+                  className="w-full py-4 rounded-2xl font-black text-white text-sm transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02]"
                   style={{
-                    background: generating ? 'rgba(249,115,22,0.3)' : 'linear-gradient(135deg,#f97316,#ea580c)',
-                    boxShadow: generating ? 'none' : '0 8px 32px rgba(249,115,22,0.5)',
+                    background: generating ? 'rgba(249,115,22,0.3)' : healthcareFieldCount > 0 ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f97316,#ea580c)',
+                    boxShadow: generating ? 'none' : healthcareFieldCount > 0 ? '0 8px 32px rgba(16,185,129,0.5)' : '0 8px 32px rgba(249,115,22,0.5)',
                   }}>
             {generating ? (
               <>
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75"/></svg>
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Forging…
               </>
             ) : (
               <>
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                Forge {count.toLocaleString()} Rows
+                <Zap className="w-4 h-4" fill="currentColor" />
+                {healthcareFieldCount > 0 ? `Forge ${count.toLocaleString()} Records` : `Forge ${count.toLocaleString()} Rows`}
               </>
             )}
           </button>
         </div>
 
-        {/* ── MAIN CONTENT ────────────────────────────────────────────── */}
+        {/* ── MAIN CONTENT ─────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 space-y-4">
 
-          {/* Stats bar */}
           {rows.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Rows',    value: rows.length.toLocaleString(),                icon: '📊', color: '#f97316' },
-                { label: 'Fields',  value: fields.length,                               icon: '🏷️', color: '#8b5cf6' },
-                { label: 'Format',  value: format.toUpperCase(),                        icon: '📄', color: '#06b6d4' },
-                { label: 'Size',    value: `~${(outputText.length / 1024).toFixed(1)} KB`, icon: '💾', color: '#10b981' },
+                { label: 'Rows',    value: rows.length.toLocaleString(), Icon: Database, color: '#f97316' },
+                { label: 'Fields',  value: fields.length,                Icon: Layers, color: '#8b5cf6' },
+                { label: 'Format',  value: format.toUpperCase(),         Icon: FileType, color: '#06b6d4' },
+                { label: 'Size',    value: `~${(outputText.length / 1024).toFixed(1)} KB`, Icon: Download, color: '#10b981' },
               ].map(s => (
                 <div key={s.label} className="rounded-2xl p-4 border border-white/10 relative overflow-hidden"
                      style={{ background: 'rgba(255,255,255,0.025)' }}>
                   <div className="absolute inset-0 opacity-5 pointer-events-none rounded-2xl"
                        style={{ background: `radial-gradient(circle at top left, ${s.color}, transparent 70%)` }} />
-                  <div className="text-2xl mb-1">{s.icon}</div>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-2"
+                       style={{ background: `${s.color}12`, border: `1px solid ${s.color}25` }}>
+                    <s.Icon className="w-5 h-5" style={{ color: s.color }} strokeWidth={1.8} />
+                  </div>
                   <div className="text-xl font-black text-white">{s.value}</div>
                   <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mt-0.5">{s.label}</div>
                 </div>
@@ -669,16 +804,16 @@ export default function Generator({ userName, onSignOut }: Props) {
             </div>
           )}
 
-          {/* Output area */}
           {rows.length > 0 ? (
             <div className="rounded-2xl border border-white/10 overflow-hidden"
                  style={{ background: 'rgba(255,255,255,0.02)' }}>
               <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 flex-wrap gap-2">
                 <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                  {([['table', 'Table View'], ['code', 'Code View']] as const).map(([k, l]) => (
+                  {([['table', 'Table View', Eye] as const, ['code', 'Code View', Code2] as const]).map(([k, l, Icon]) => (
                     <button key={k} onClick={() => setActiveTab(k)}
-                            className={cn('px-4 py-1.5 rounded-lg text-xs font-bold transition-all', activeTab === k ? 'text-white' : 'text-slate-600 hover:text-slate-300')}
+                            className={cn('px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5', activeTab === k ? 'text-white' : 'text-slate-600 hover:text-slate-300')}
                             style={activeTab === k ? { background: 'linear-gradient(135deg,#f97316,#ea580c)' } : {}}>
+                      <Icon className="w-3.5 h-3.5" strokeWidth={2} />
                       {l}
                     </button>
                   ))}
@@ -688,14 +823,12 @@ export default function Generator({ userName, onSignOut }: Props) {
                           className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border',
                             copied ? 'text-emerald-400 border-emerald-500/40' : 'text-slate-400 hover:text-white border-white/10 hover:border-white/20')}
                           style={{ background: 'rgba(255,255,255,0.04)' }}>
-                    {copied ? '✓ Copied!' : (
-                      <><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>Copy</>
-                    )}
+                    {copied ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" strokeWidth={2} /> Copy</>}
                   </button>
                   <button onClick={handleDownload}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
                           style={{ background: 'rgba(255,255,255,0.04)' }}>
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M12 15V3m0 12l-4-4m4 4l4-4"/><path strokeLinecap="round" d="M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/></svg>
+                    <Download className="w-3.5 h-3.5" strokeWidth={2} />
                     Download .{format}
                   </button>
                 </div>
@@ -707,14 +840,19 @@ export default function Generator({ userName, onSignOut }: Props) {
                     <thead className="sticky top-0" style={{ background: 'rgba(10,10,20,0.98)' }}>
                       <tr>
                         <th className="px-4 py-3 text-left text-slate-700 font-semibold border-b border-white/10 w-10">#</th>
-                        {headers.map(h => (
-                          <th key={h} className="px-4 py-3 text-left text-slate-400 font-bold border-b border-white/10 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-orange-500/70">◆</span>
-                              {h}
-                            </div>
-                          </th>
-                        ))}
+                        {headers.map(h => {
+                          const field = fields.find(f => f.name === h);
+                          const isHC = field && isHealthcareType(field.type);
+                          return (
+                            <th key={h} className="px-4 py-3 text-left font-bold border-b border-white/10 whitespace-nowrap"
+                                style={{ color: isHC ? '#34d399' : '#94a3b8' }}>
+                              <div className="flex items-center gap-1.5">
+                                {isHC ? <Heart className="w-3 h-3 text-emerald-500/50" strokeWidth={2} /> : <Database className="w-3 h-3 text-orange-500/50" strokeWidth={2} />}
+                                {h}
+                              </div>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
@@ -746,82 +884,154 @@ export default function Generator({ userName, onSignOut }: Props) {
               )}
             </div>
           ) : (
-            /* Empty state */
-            <div className="rounded-2xl border border-white/10 flex flex-col items-center justify-center py-28"
+            <div className="rounded-2xl border border-white/10 flex flex-col items-center justify-center py-24"
                  style={{ background: 'rgba(255,255,255,0.015)' }}>
-              <div className="w-24 h-24 rounded-3xl flex items-center justify-center mb-6"
+              <div className="w-28 h-28 rounded-3xl flex items-center justify-center mb-6 relative"
                    style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.12), rgba(234,88,12,0.12))', border: '1px solid rgba(249,115,22,0.2)' }}>
-                <svg className="w-12 h-12 opacity-70" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth={1}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 5.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-                </svg>
+                <Database className="w-14 h-14 text-orange-500/70" strokeWidth={1} />
+                <div className="absolute -top-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center"
+                     style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', boxShadow: '0 0 16px rgba(249,115,22,0.5)' }}>
+                  <Zap className="w-4 h-4 text-white" fill="currentColor" />
+                </div>
               </div>
               <h3 className="text-2xl font-black text-white mb-2">Ready to Forge</h3>
               <p className="text-slate-600 text-sm text-center max-w-sm leading-relaxed">
-                Build a schema or pick a <span className="text-orange-400 font-semibold cursor-pointer" onClick={() => setSideTab('scenarios')}>Scenario →</span><br/>
-                then hit <span className="text-orange-400 font-semibold">Forge</span> to generate your data.
+                Build a schema, try <span className="text-emerald-400 font-semibold cursor-pointer inline-flex items-center gap-0.5" onClick={() => setSideTab('healthcare')}>Healthcare Data <ArrowRight className="w-3 h-3" /></span><br/>
+                or pick a <span className="text-orange-400 font-semibold cursor-pointer inline-flex items-center gap-0.5" onClick={() => setSideTab('scenarios')}>Scenario <ArrowRight className="w-3 h-3" /></span> then hit <span className="text-orange-400 font-semibold">Forge</span>
               </p>
-              <div className="flex items-center gap-3 mt-8">
+              <div className="flex items-center gap-3 mt-8 flex-wrap justify-center">
+                <button onClick={() => setSideTab('healthcare')}
+                        className="px-6 py-3 rounded-xl font-bold text-white text-sm border border-emerald-500/40 hover:border-emerald-500/70 transition-all flex items-center gap-2 hover:scale-[1.02]"
+                        style={{ background: 'rgba(16,185,129,0.1)' }}>
+                  <Heart className="w-4 h-4 text-emerald-400" strokeWidth={2} /> Healthcare Data
+                </button>
                 <button onClick={() => setSideTab('scenarios')}
-                        className="px-6 py-3 rounded-xl font-bold text-white text-sm border border-orange-500/40 hover:border-orange-500/70 transition-all"
+                        className="px-6 py-3 rounded-xl font-bold text-white text-sm border border-orange-500/40 hover:border-orange-500/70 transition-all flex items-center gap-2 hover:scale-[1.02]"
                         style={{ background: 'rgba(249,115,22,0.1)' }}>
-                  Browse Scenarios
+                  <Sparkles className="w-4 h-4 text-orange-400" strokeWidth={2} /> Browse Scenarios
                 </button>
                 <button onClick={handleGenerate}
-                        className="px-6 py-3 rounded-xl font-black text-white text-sm transition-all"
+                        className="px-6 py-3 rounded-xl font-black text-white text-sm transition-all flex items-center gap-2 hover:scale-[1.02]"
                         style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', boxShadow: '0 8px 24px rgba(249,115,22,0.4)' }}>
-                  ⚡ Quick Generate
+                  <Zap className="w-4 h-4" fill="currentColor" /> Quick Generate
                 </button>
               </div>
             </div>
           )}
 
-          {/* Custom Field Examples Info Card */}
+          {/* Healthcare Feature Showcase */}
+          <div className="rounded-2xl border overflow-hidden relative"
+               style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.04), rgba(6,182,212,0.02))', borderColor: 'rgba(16,185,129,0.15)' }}>
+            <div className="absolute inset-0 opacity-5 pointer-events-none"
+                 style={{ backgroundImage: 'radial-gradient(circle at 90% 30%, #10b981, transparent 40%), radial-gradient(circle at 10% 80%, #06b6d4, transparent 40%)' }} />
+            <div className="relative px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(16,185,129,0.1)' }}>
+              <div className="flex items-center gap-2">
+                <Heart className="w-4 h-4 text-emerald-400" strokeWidth={2} />
+                <span className="text-xs font-black text-emerald-300 uppercase tracking-wider">Healthcare Data Engine</span>
+                <span className="text-[8px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20 ml-1">NEW</span>
+              </div>
+              <button onClick={() => setSideTab('healthcare')}
+                      className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1">
+                Open Healthcare Tab <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+            <div className="relative p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { Icon: UserCircle, title: 'Patient Records', desc: '14 fields — demographics, insurance, allergies, emergency contacts', color: '#06b6d4', scenario: 'healthcare-patients' },
+                { Icon: Stethoscope, title: 'Clinical Encounters', desc: '20 fields — admissions, vitals, treatments, discharge data', color: '#8b5cf6', scenario: 'healthcare-encounters' },
+                { Icon: Activity, title: 'Emergency Dept', desc: '17 fields — triage levels, chief complaints, arrival modes', color: '#ef4444', scenario: 'healthcare-emergency' },
+                { Icon: Building2, title: 'Mental Health', desc: '14 fields — PHQ-9/GAD-7 scores, therapy types, risk levels', color: '#f59e0b', scenario: 'healthcare-mental' },
+                { Icon: Stethoscope, title: 'Lab Results', desc: '12 fields — specimens, priorities, result statuses', color: '#10b981', scenario: 'healthcare-lab' },
+                { Icon: Heart, title: 'Pharmacy / Rx', desc: '12 fields — routes, refills, medication statuses', color: '#ec4899', scenario: 'healthcare-pharmacy' },
+                { Icon: Layers, title: 'Surgical Records', desc: '17 fields — anesthesia, ASA class, complications, blood loss', color: '#f97316', scenario: 'healthcare-surgical' },
+              ].map(card => (
+                <div key={card.title}
+                     className="rounded-xl p-3.5 border transition-all cursor-pointer group hover:scale-[1.02]"
+                     style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(16,185,129,0.1)' }}
+                     onClick={() => loadScenario(card.scenario)}
+                     onMouseEnter={e => {
+                       (e.currentTarget as HTMLElement).style.borderColor = `${card.color}55`;
+                       (e.currentTarget as HTMLElement).style.background = `${card.color}08`;
+                     }}
+                     onMouseLeave={e => {
+                       (e.currentTarget as HTMLElement).style.borderColor = 'rgba(16,185,129,0.1)';
+                       (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)';
+                     }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center"
+                         style={{ background: `${card.color}15`, border: `1px solid ${card.color}25` }}>
+                      <card.Icon className="w-5 h-5" style={{ color: card.color }} strokeWidth={1.8} />
+                    </div>
+                    <span className="text-xs font-bold text-white">{card.title}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">{card.desc}</p>
+                  <div className="mt-2 flex items-center gap-1 text-[10px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: card.color }}>
+                    Load Scenario <ChevronRight className="w-3 h-3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="relative px-5 py-3 border-t flex flex-wrap gap-1.5" style={{ borderColor: 'rgba(16,185,129,0.08)' }}>
+              <span className="text-[10px] text-emerald-500/60 font-bold mr-1 self-center">28 TYPES:</span>
+              {HEALTHCARE_TYPES.slice(0, 14).map(t => (
+                <span key={t} className="px-2 py-0.5 rounded-full text-[9px] font-semibold text-emerald-400/70 border border-emerald-500/15"
+                      style={{ background: 'rgba(16,185,129,0.04)' }}>
+                  {typeLabel(t)}
+                </span>
+              ))}
+              <span className="text-[9px] text-emerald-500/40 font-semibold self-center">+{HEALTHCARE_TYPES.length - 14} more</span>
+            </div>
+          </div>
+
+          {/* Custom Field Info Card */}
           <div className="rounded-2xl border border-white/10 overflow-hidden"
                style={{ background: 'rgba(255,255,255,0.02)' }}>
             <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">⚙️ Custom Field Types</span>
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Settings className="w-3.5 h-3.5 text-orange-400" strokeWidth={2} /> Custom Field Types
+              </span>
               <button onClick={() => setSideTab('custom')}
-                      className="text-[10px] font-bold text-orange-400 hover:text-orange-300 transition-colors">
-                Build one →
+                      className="text-[10px] font-bold text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1">
+                Build one <ArrowRight className="w-3 h-3" />
               </button>
             </div>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
                 {
-                  icon: '📋',
-                  title: 'Custom List',
-                  color: '#f97316',
+                  Icon: ListChecks, title: 'Custom List', color: '#f97316',
                   desc: 'Define your own set of values. One is randomly picked per row.',
                   example: 'active,inactive,pending,banned',
                   type: 'custom_list' as FieldType,
                   config: { listValues: 'active,inactive,pending,banned' },
                 },
                 {
-                  icon: '🔡',
-                  title: 'Custom Pattern',
-                  color: '#8b5cf6',
+                  Icon: FileCode2, title: 'Custom Pattern', color: '#8b5cf6',
                   desc: 'Generate strings using character-class notation.',
                   example: 'ORD-[A-Z]{2}[0-9]{5}',
                   type: 'custom_regex' as FieldType,
                   config: { regexPattern: 'ORD-[A-Z]{2}[0-9]{5}' },
                 },
                 {
-                  icon: '📐',
-                  title: 'Custom Template',
-                  color: '#06b6d4',
+                  Icon: FileType, title: 'Custom Template', color: '#06b6d4',
                   desc: 'Compose values using {{tokens}} from any built-in type.',
                   example: 'USER-{{integer}}-{{city}}',
                   type: 'custom_template' as FieldType,
                   config: { template: 'USER-{{integer}}-{{city}}' },
                 },
               ].map(card => (
-                <div key={card.title} className="rounded-xl p-4 border border-white/8 group cursor-pointer transition-all"
+                <div key={card.title} className="rounded-xl p-4 border border-white/8 group cursor-pointer transition-all hover:scale-[1.02]"
                      style={{ background: 'rgba(255,255,255,0.02)' }}
                      onClick={() => addField(card.type, card.config)}>
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">{card.icon}</span>
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center"
+                         style={{ background: `${card.color}12`, border: `1px solid ${card.color}25` }}>
+                      <card.Icon className="w-5 h-5" style={{ color: card.color }} strokeWidth={1.8} />
+                    </div>
                     <span className="text-xs font-bold text-slate-300">{card.title}</span>
-                    <span className="ml-auto text-[10px] text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity">+ Add</span>
+                    <span className="ml-auto text-[10px] text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                      <Plus className="w-3 h-3" /> Add
+                    </span>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-relaxed mb-2">{card.desc}</p>
                   <code className="text-[10px] font-mono px-2 py-1 rounded-lg block"
