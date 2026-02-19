@@ -495,41 +495,15 @@ export default function LandingPage({ onGetStarted }: Props) {
       {/* ── FOOTER ────────────────────────────────────────────────── */}
       <footer className="border-t border-white/5 py-12 px-6">
         <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                     style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)' }}>
-                  <Database className="w-4 h-4 text-white" strokeWidth={2} />
-                </div>
-                <span className="font-black text-white text-sm">Data Forge</span>
+          <div className="mb-12 max-w-md">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                   style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)' }}>
+                <Database className="w-4 h-4 text-white" strokeWidth={2} />
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed">Craft realistic synthetic data at scale. Free, private, and powerful.</p>
+              <span className="font-black text-white text-sm">Data Forge</span>
             </div>
-            <div>
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Product</h4>
-              <ul className="space-y-2">
-                {['Features', 'Healthcare', 'Scenarios', 'Custom Fields', 'How It Works'].map(l => (
-                  <li key={l}><a href={`#${l.toLowerCase()}`} className="text-sm text-slate-600 hover:text-white transition-colors">{l}</a></li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Resources</h4>
-              <ul className="space-y-2">
-                {['Documentation', 'API Reference', 'Blog', 'Changelog', 'Status'].map(l => (
-                  <li key={l}><a href="#" className="text-sm text-slate-600 hover:text-white transition-colors">{l}</a></li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Company</h4>
-              <ul className="space-y-2">
-                {['About', 'Contact', 'Privacy Policy', 'Terms of Service', 'Security'].map(l => (
-                  <li key={l}><a href="#" className="text-sm text-slate-600 hover:text-white transition-colors">{l}</a></li>
-                ))}
-              </ul>
-            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">Craft realistic synthetic data at scale. Free, private, and powerful.</p>
           </div>
           <div className="flex flex-col sm:flex-row items-center justify-between pt-8 border-t border-white/5 gap-4">
             <p className="text-xs text-slate-700">© {new Date().getFullYear()} Data Forge. All rights reserved.</p>
